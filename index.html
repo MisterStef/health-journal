@@ -16,11 +16,11 @@
 :root{
   --bg:#f7f5f0; --card:#ffffff; --ink:#23262b; --mute:#6b7078; --line:#e4e0d6;
   --accent:#2f7d6d; --accent-ink:#ffffff; --accent-soft:#e0efe9;
-  --warn:#b4572f; --warn-soft:#f8e8df; --bar:#9bc4b9; --water:#3b82c4; --water-soft:#e1edf8;
+  --warn:#b4572f; --warn-soft:#f8e8df; --amber:#a8741a; --bar:#9bc4b9; --water:#3b82c4; --water-soft:#e1edf8;
 }
 @media (prefers-color-scheme: dark){
   :root{ --bg:#17191c; --card:#202327; --ink:#ebe9e3; --mute:#9aa0a8; --line:#33373d;
-    --accent:#5fb7a3; --accent-ink:#0f1a17; --accent-soft:#25403a; --warn:#e59a73; --warn-soft:#3a2a22; --bar:#3f7a6d; --water:#6aa9e0; --water-soft:#1f2e3d; }
+    --accent:#5fb7a3; --accent-ink:#0f1a17; --accent-soft:#25403a; --warn:#e59a73; --warn-soft:#3a2a22; --amber:#e0b04a; --bar:#3f7a6d; --water:#6aa9e0; --water-soft:#1f2e3d; }
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -90,7 +90,7 @@ button{font:inherit;cursor:pointer}
 svg text{fill:var(--mute);font-size:11px;font-family:inherit}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:520px){.two{grid-template-columns:1fr}}
-.nrow{display:grid;grid-template-columns:118px 1fr 92px;gap:8px;align-items:center;font-size:14px;margin:7px 0}
+.nrow{display:grid;grid-template-columns:112px 1fr 104px;gap:8px;align-items:center;font-size:14px;margin:7px 0}
 .nrow .track{height:9px;border-radius:5px;background:var(--line);overflow:hidden}
 .nrow .fill{height:100%;border-radius:5px;background:var(--accent)}
 .nrow .fill.over{background:var(--warn)}
@@ -127,6 +127,14 @@ svg text{fill:var(--mute);font-size:11px;font-family:inherit}
 .toggle small{display:block;color:var(--mute);font-size:12px;font-weight:400}
 .toggle .car{font-size:18px;color:var(--mute)}
 .collapse{margin-top:6px}
+.st{display:block;font-size:11px;font-weight:600;line-height:1.2}
+.st.ok{color:var(--accent)} .st.near{color:var(--amber)} .st.over,.st.low{color:var(--warn)} .st.wait{color:var(--mute)}
+.nrow .track{position:relative}
+.nrow .tick{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.55;border-radius:1px}
+.nrow .fill.near{background:var(--amber)}
+.tgtgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;margin:8px 0}
+.tgtgrid div{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:6px 9px;font-size:13px}
+.tgtgrid b{display:block;font-size:15px}
 .hr{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
 </style>
 </head>
@@ -165,41 +173,39 @@ const ACTIVITY = [[1.2,'Mostly sitting (desk job, little exercise)'],[1.375,'Lig
 const OZ = 29.5735;
 const FOOD_GROUPS = ['Vegetables','Fruits','Whole grains','Legumes','Nuts & seeds','Fish & seafood','Poultry & meat','Dairy & eggs','Other'];
 
-/* ---------- nutrient definitions (targets = FDA Daily Values unless noted) ---------- */
-const male = () => S.profile.sex==='m';
+/* ---------- nutrient definitions (labels and units; personal targets are in targets()) ---------- */
 const DEFS = [
-  {g:'Macros',k:'protein',l:'Protein',u:'g',ty:'min',t:()=>proteinTarget()},
-  {g:'Macros',k:'carbs',l:'Carbs',u:'g',ty:'info',t:275},
-  {g:'Macros',k:'fat',l:'Total fat',u:'g',ty:'info',t:78},
-  {g:'Macros',k:'fiber',l:'Fiber',u:'g',ty:'min',t:28},
-  {g:'Fats',k:'sat',l:'Saturated fat',u:'g',ty:'max',t:20},
-  {g:'Fats',k:'trans',l:'Trans fat',u:'g',ty:'max',t:2},
-  {g:'Fats',k:'mono',l:'Monounsaturated',u:'g',ty:'info'},
-  {g:'Fats',k:'poly',l:'Polyunsaturated',u:'g',ty:'info'},
-  {g:'Fats',k:'omega3',l:'Omega-3',u:'g',ty:'min',t:()=>male()?1.6:1.1},
-  {g:'Sugar, sodium & caffeine',k:'sugar',l:'Total sugars',u:'g',ty:'info'},
-  {g:'Sugar, sodium & caffeine',k:'addedSugar',l:'Added sugar',u:'g',ty:'max',t:()=>male()?36:25},
-  {g:'Sugar, sodium & caffeine',k:'sodium',l:'Sodium',u:'mg',ty:'max',t:2300},
-  {g:'Sugar, sodium & caffeine',k:'caffeine',l:'Caffeine',u:'mg',ty:'max',t:400},
-  {g:'Minerals',k:'calcium',l:'Calcium',u:'mg',ty:'min',t:1300},
-  {g:'Minerals',k:'iron',l:'Iron',u:'mg',ty:'min',t:18},
-  {g:'Minerals',k:'magnesium',l:'Magnesium',u:'mg',ty:'min',t:420},
-  {g:'Minerals',k:'potassium',l:'Potassium',u:'mg',ty:'min',t:4700},
-  {g:'Minerals',k:'zinc',l:'Zinc',u:'mg',ty:'min',t:11},
-  {g:'Vitamins',k:'vitA',l:'Vitamin A',u:'mcg',ty:'min',t:900},
-  {g:'Vitamins',k:'vitC',l:'Vitamin C',u:'mg',ty:'min',t:90},
-  {g:'Vitamins',k:'vitD',l:'Vitamin D',u:'mcg',ty:'min',t:20},
-  {g:'Vitamins',k:'vitE',l:'Vitamin E',u:'mg',ty:'min',t:15},
-  {g:'Vitamins',k:'vitK',l:'Vitamin K',u:'mcg',ty:'min',t:120},
-  {g:'Vitamins',k:'b12',l:'Vitamin B12',u:'mcg',ty:'min',t:2.4},
-  {g:'Vitamins',k:'folate',l:'Folate',u:'mcg',ty:'min',t:400},
-  {g:'Vitamins',k:'b6',l:'Vitamin B6',u:'mg',ty:'min',t:1.7},
-  {g:'Vitamins',k:'thiamin',l:'Thiamin (B1)',u:'mg',ty:'min',t:1.2},
-  {g:'Vitamins',k:'riboflavin',l:'Riboflavin (B2)',u:'mg',ty:'min',t:1.3},
-  {g:'Vitamins',k:'niacin',l:'Niacin (B3)',u:'mg',ty:'min',t:16}
+  {g:'Macros',k:'protein',l:'Protein',u:'g'},
+  {g:'Macros',k:'carbs',l:'Carbs',u:'g'},
+  {g:'Macros',k:'fat',l:'Total fat',u:'g'},
+  {g:'Macros',k:'fiber',l:'Fiber',u:'g'},
+  {g:'Fats',k:'sat',l:'Saturated fat',u:'g'},
+  {g:'Fats',k:'trans',l:'Trans fat',u:'g'},
+  {g:'Fats',k:'mono',l:'Monounsaturated',u:'g'},
+  {g:'Fats',k:'poly',l:'Polyunsaturated',u:'g'},
+  {g:'Fats',k:'omega3',l:'Omega-3',u:'g'},
+  {g:'Sugar, sodium & caffeine',k:'sugar',l:'Total sugars',u:'g'},
+  {g:'Sugar, sodium & caffeine',k:'addedSugar',l:'Added sugar',u:'g'},
+  {g:'Sugar, sodium & caffeine',k:'sodium',l:'Sodium',u:'mg'},
+  {g:'Sugar, sodium & caffeine',k:'caffeine',l:'Caffeine',u:'mg'},
+  {g:'Minerals',k:'calcium',l:'Calcium',u:'mg'},
+  {g:'Minerals',k:'iron',l:'Iron',u:'mg'},
+  {g:'Minerals',k:'magnesium',l:'Magnesium',u:'mg'},
+  {g:'Minerals',k:'potassium',l:'Potassium',u:'mg'},
+  {g:'Minerals',k:'zinc',l:'Zinc',u:'mg'},
+  {g:'Vitamins',k:'vitA',l:'Vitamin A',u:'mcg'},
+  {g:'Vitamins',k:'vitC',l:'Vitamin C',u:'mg'},
+  {g:'Vitamins',k:'vitD',l:'Vitamin D',u:'mcg'},
+  {g:'Vitamins',k:'vitE',l:'Vitamin E',u:'mg'},
+  {g:'Vitamins',k:'vitK',l:'Vitamin K',u:'mcg'},
+  {g:'Vitamins',k:'b12',l:'Vitamin B12',u:'mcg'},
+  {g:'Vitamins',k:'folate',l:'Folate',u:'mcg'},
+  {g:'Vitamins',k:'b6',l:'Vitamin B6',u:'mg'},
+  {g:'Vitamins',k:'thiamin',l:'Thiamin (B1)',u:'mg'},
+  {g:'Vitamins',k:'riboflavin',l:'Riboflavin (B2)',u:'mg'},
+  {g:'Vitamins',k:'niacin',l:'Niacin (B3)',u:'mg'}
 ];
 const NKEYS = ['cal'].concat(DEFS.map(d=>d.k));
-const tOf = d => typeof d.t==='function' ? d.t() : d.t;
 
 /* ---------- state ---------- */
 /* Fixed personal profile (single user). Weight is the starting weight; logged weights take over. */
@@ -260,7 +266,6 @@ function latestWeight(){
   const ks=Object.keys(S.days).filter(k=>S.days[k].weight).sort();
   return ks.length ? +S.days[ks[ks.length-1]].weight : (+S.profile.weight||null);
 }
-function proteinTarget(){ const w=latestWeight(); return w ? Math.round(Math.max(50,0.8*w*0.45359237)) : 50; }
 
 /* ---------- calorie / goal math ---------- */
 function ageNow(){
@@ -283,6 +288,61 @@ function calc(){
   return {w,bmr:Math.round(bmr),tdee:Math.round(tdee),target,limited,floor,bmiLo:Math.round(bmiLo),bmiHi:Math.round(bmiHi)};
 }
 function targetCal(){ const p=S.profile; if(+p.custom>0) return +p.custom; const c=calc(); return c?c.target:null; }
+
+/* ---------- personal nutrient targets ----------
+   Built for: male, 29, goal 215 lb, strength training 1-2 days/week, family history of high blood pressure and
+   diabetes, blood pressure readings above ideal at visits, fatty liver, no supplements.
+   Heart/liver-friendly pattern (Mediterranean/DASH style): protein high enough to protect muscle in a deficit,
+   moderate fiber-rich carbs, mostly unsaturated fat, low added sugar and sodium. Vitamins/minerals use RDA/AI for men 19-50. */
+function targets(){
+  const kcal=targetCal()||2000, p=S.profile;
+  const gkg=(+p.goal||latestWeight()||180)*0.45359237;
+  const r5=x=>Math.round(x/5)*5;
+  const protein=r5(1.6*gkg), fat=Math.round(0.30*kcal/9);
+  const carbs=r5((kcal-4*protein-9*fat)/4);
+  const T={};
+  const range=(k,t,lo,hi)=>{ T[k]={ty:'range',t,lo,hi}; };
+  const min=(k,t)=>{ T[k]={ty:'min',t}; };
+  const max=(k,t,cap)=>{ T[k]={ty:'max',t,cap}; };
+  range('protein',protein,r5(1.4*gkg),r5(2.0*gkg));
+  range('carbs',carbs,r5(0.38*kcal/4),r5(0.50*kcal/4));
+  range('fat',fat,Math.round(0.25*kcal/9),Math.round(0.35*kcal/9));
+  min('fiber',Math.max(28,Math.round(14*kcal/1000)));
+  max('sat',Math.round(0.07*kcal/9),Math.round(0.10*kcal/9));
+  max('trans',0.5,2);
+  min('omega3',1.6);
+  max('addedSugar',25,36);
+  max('sodium',1500,2300);
+  max('caffeine',400,400);
+  min('calcium',1000); min('iron',8); min('magnesium',420); min('potassium',3400); min('zinc',11);
+  min('vitA',900); min('vitC',90); min('vitD',15); min('vitE',15); min('vitK',120); min('b12',2.4);
+  min('folate',400); min('b6',1.3); min('thiamin',1.2); min('riboflavin',1.3); min('niacin',16);
+  return T;
+}
+/* status of one nutrient value: s = ok | wait | near | over | low */
+function statusOf(k,v,isToday){
+  const T=targets()[k]; if(!T) return null; v=+v||0;
+  if(T.ty==='min'){
+    if(v>=T.t) return {s:'ok',l:'Hit ✓'};
+    if(isToday) return {s:'wait',l:'Building'};
+    return v>=T.t*0.85?{s:'near',l:'Close'}:{s:'low',l:'Short'};
+  }
+  if(T.ty==='max'){
+    if(v<=T.t) return {s:'ok',l:'Within limit ✓'};
+    if(v<=T.cap) return {s:'near',l:'Near limit'};
+    return {s:'over',l:'Over limit'};
+  }
+  if(v>T.hi) return {s:'near',l:'Above range'};
+  if(v>=T.lo) return {s:'ok',l:'On target ✓'};
+  return isToday?{s:'wait',l:'Building'}:{s:'low',l:'Under'};
+}
+function fmtN(n){ const a=Math.abs(n); return a>=100?String(Math.round(n)):(Math.round(n*10)/10).toString(); }
+function targetText(k,u){
+  const T=targets()[k]; if(!T) return '';
+  if(T.ty==='min') return ` / ${fmtN(T.t)}`;
+  if(T.ty==='max') return ` / ≤${fmtN(T.t)}`;
+  return ` / ${fmtN(T.t)}`;
+}
 
 /* ---------- water goal: recalculated from what you have logged ---------- */
 const WATER_RULES = [
@@ -480,28 +540,45 @@ function vFood(){
 }
 
 /* ----- nutrients (collapsible, top of Food tab) ----- */
-function nutrSummary(t){ return `Protein ${Math.round(t.protein)}/${proteinTarget()} g · Fiber ${Math.round(t.fiber)}/28 g · Sodium ${Math.round(t.sodium)} mg`; }
+function nutrSummary(t){
+  const T=targets(), isToday=S.date===todayStr();
+  const warn=['sat','trans','addedSugar','sodium','caffeine'].map(k=>[k,statusOf(k,t[k],isToday)]).filter(([k,s])=>s&&(s.s==='near'||s.s==='over')).map(([k,s])=>DEFS.find(d=>d.k===k).l.toLowerCase()+(s.s==='over'?' over':' high'));
+  return `Protein ${Math.round(t.protein)}/${T.protein.t} g · Carbs ${Math.round(t.carbs)}/${T.carbs.t} g · Fat ${Math.round(t.fat)}/${T.fat.t} g${warn.length?' · ⚠ '+warn.join(', '):''}`;
+}
 function nutrBody(){
   const d=day(S.date), t=dayTotals(d), fl=d.foods||[];
   const partial=fl.filter(f=>!f.n||!Object.keys(f.n).length).length;
   const sections=[...new Set(DEFS.map(x=>x.g))];
+  const isToday=S.date===todayStr(), TT=targets();
   const rows=g=>DEFS.filter(x=>x.g===g).map(x=>{
-    const v=t[x.k], tg=tOf(x), pct=tg?v/tg*100:null;
-    const cls=x.ty==='max'?(v>tg?'over':''):x.ty==='info'?'info':'';
-    const w=tg?Math.min(100,pct):0;
-    return `<div class="nrow"><span>${x.l}</span><div class="track">${tg?`<div class="fill ${cls}" style="width:${w}%"></div>`:''}</div><span class="v"><b>${r1(v)}</b> ${x.u}${tg?` · ${Math.round(pct)}%`:''}</span></div>`;
+    const v=t[x.k], T=TT[x.k], st=T?statusOf(x.k,v,isToday):null;
+    let bar='';
+    if(T){
+      const scale=T.ty==='range'?T.hi:T.ty==='max'?T.cap:T.t, w=Math.min(100,v/scale*100), tick=Math.min(98,T.t/scale*100);
+      const cls=!st?'info':st.s==='ok'?'':st.s==='near'?'near':st.s==='wait'?'info':'over';
+      bar=`<div class="fill ${cls}" style="width:${w}%"></div><i class="tick" style="left:${tick}%"></i>`;
+    }
+    return `<div class="nrow"><div><span>${x.l}</span>${st?`<small class="st ${st.s}">${st.l}</small>`:''}</div><div class="track">${bar}</div><span class="v"><b>${fmtN(v)}</b>${T?esc(targetText(x.k)):''} ${x.u}</span></div>`;
   }).join('');
   const dayGroups=new Set(); fl.forEach(f=>(f.groups||[]).forEach(g=>dayGroups.add(g)));
   const plants=weekPlants(S.date);
   return (fl.length?'':'<div class="empty">Log food to see nutrients here.</div>')+
   (partial?`<div class="warn" style="margin:8px 0">${partial} entr${partial>1?'ies have':'y has'} calories only, so these totals may be low.</div>`:'')+
-  `<div class="note" style="margin-top:6px">Bars show % of a typical daily target. Green is “get enough”, orange means over a “keep under” limit.</div>`+
+  (()=>{ const T=targets(), cal=targetCal(); return `<div class="note" style="margin-top:6px"><b>Your daily targets</b> (for ${cal} calories). The tick on each bar marks the target.</div>
+  <div class="tgtgrid"><div><span class="note">Protein</span><b>${T.protein.t} g</b><span class="note">${T.protein.lo}–${T.protein.hi} g ok</span></div>
+  <div><span class="note">Carbs</span><b>${T.carbs.t} g</b><span class="note">${T.carbs.lo}–${T.carbs.hi} g ok</span></div>
+  <div><span class="note">Fat</span><b>${T.fat.t} g</b><span class="note">${T.fat.lo}–${T.fat.hi} g ok</span></div>
+  <div><span class="note">Fiber</span><b>${T.fiber.t}+ g</b><span class="note">at least</span></div>
+  <div><span class="note">Saturated fat</span><b>≤ ${T.sat.t} g</b><span class="note">under 7% of cal</span></div>
+  <div><span class="note">Added sugar</span><b>≤ ${T.addedSugar.t} g</b><span class="note">limit</span></div>
+  <div><span class="note">Sodium</span><b>≤ ${T.sodium.t} mg</b><span class="note">hard cap ${T.sodium.cap}</span></div>
+  <div><span class="note">Caffeine</span><b>≤ ${T.caffeine.t} mg</b><span class="note">limit</span></div></div>`; })()+
   sections.map(g=>`<div style="margin-top:14px"><h3>${g}</h3>${rows(g)}</div>`).join('')+
   `<div style="margin-top:14px"><h3>Food variety</h3>
     <div class="row sb" style="margin-bottom:6px"><span><b>${dayGroups.size}</b> of ${FOOD_GROUPS.length} food groups today</span><span><b>${plants.length}</b> / 30 different plants this week</span></div>
     <div class="chips">${FOOD_GROUPS.map(g=>`<span class="chip ${dayGroups.has(g)?'on':''}">${g}</span>`).join('')}</div>
     ${plants.length?`<div class="note" style="margin-top:8px">This week: ${esc(plants.join(', '))}</div>`:'<div class="note" style="margin-top:8px">Plants include vegetables, fruit, whole grains, beans, nuts, seeds, herbs and spices. Eating around 30 different ones a week is a common variety goal for gut health.</div>'}</div>
-  <div class="note" style="margin-top:14px">Targets are FDA Daily Values (adult), with protein at 0.8 g per kg of body weight and added sugar at the American Heart Association limit. Photo estimates are approximate and your own needs vary with age, sex and health.</div>`;
+  <div class="note" style="margin-top:14px">How these were set: protein is 1.6 g per kg of your goal weight (you strength train 1–2 days a week and are in a calorie deficit); fat is about 30% of calories and mostly unsaturated; carbs are the moderate, fiber-rich remainder; fiber is 14 g per 1,000 calories; saturated fat stays under 7% of calories; added sugar under 25 g; sodium under 1,500 mg, the American Heart Association’s ideal limit when blood pressure runs high, with 2,300 mg as the hard cap. Vitamins and minerals use recommended intakes for men 19–50. Because of your family history, blood pressure readings and fatty liver, please have your doctor or a registered dietitian confirm these, including alcohol, which this app does not track. Photo estimates are approximate.</div>`;
 }
 function weekPlants(date){
   const set=new Map();
@@ -636,7 +713,7 @@ function trendsBody(){
       <div class="stat"><b>${wts.length>1?((wts[wts.length-1]-wts[0]>0?'+':'')+r1(wts[wts.length-1]-wts[0])):'–'}</b><span>lb change</span></div>
     </div>
   <div style="margin-top:14px"><h3>Calories per day</h3>${chart(cal,labels,{bar:true,over:true,target:tgt,label:'Calories per day'})}</div>
-  <div style="margin-top:14px"><div class="row sb" style="margin-bottom:6px"><h3 style="margin:0">Nutrient</h3><select data-metric style="width:auto" aria-label="Nutrient">${DEFS.map(x=>`<option value="${x.k}" ${x.k===S.metric?'selected':''}>${x.l} (${x.u})</option>`).join('')}</select></div>${chart(met,labels,{bar:true,over:def.ty==='max',target:tOf(def)||null,tlabel:'target',label:def.l+' per day'})}</div>
+  <div style="margin-top:14px"><div class="row sb" style="margin-bottom:6px"><h3 style="margin:0">Nutrient</h3><select data-metric style="width:auto" aria-label="Nutrient">${DEFS.map(x=>`<option value="${x.k}" ${x.k===S.metric?'selected':''}>${x.l} (${x.u})</option>`).join('')}</select></div>${chart(met,labels,{bar:true,over:((targets()[def.k]||{}).ty==='max'),target:((targets()[def.k]||{}).t)??null,tlabel:'target',label:def.l+' per day'})}</div>
   <div style="margin-top:14px"><h3>Water (oz)</h3>${chart(wa,labels,{bar:true,color:'var(--water)',label:'Water per day'})}</div>
   <div style="margin-top:14px"><h3>Weight (lb)</h3>${chart(wt,labels,{label:'Weight over time',fmt:v=>Math.round(v*10)/10})}</div>`;
 }
@@ -649,6 +726,7 @@ function monthStats(ym){
   const tots=foodDays.map(dayTotals), av=k=>tots.length?avg(tots.map(t=>t[k])):null;
   const wDays=rows.filter(r=>waterMl(r)>0);
   const ws=ds.map(k=>S.days[k]?.weight?{k,w:+S.days[k].weight}:null).filter(Boolean);
+  const cnt=k=>foodDays.filter(r=>{ const s=statusOf(k,dayTotals(r)[k],false); return s&&s.s==='ok'; }).length;
   const hasCalc=!!calc();
   const defs=hasCalc?ds.filter(k=>hasFood(S.days[k])).map(k=>dayBalance(k).deficit):[];
   const plants=new Set(); foodDays.forEach(r=>r.foods.forEach(f=>(f.plants||[]).forEach(p=>{ const k=String(p).trim().toLowerCase(); if(k) plants.add(k); })));
@@ -657,6 +735,7 @@ function monthStats(ym){
     water:wDays.length?avg(wDays.map(r=>waterMl(r)/OZ)):null,
     onTarget:tgt?foodDays.filter(r=>dayCals(r)<=tgt*1.05).length:null, tgt,
     avgDef:defs.length?avg(defs):null, plants:plants.size,
+    protDays:cnt('protein'),fibDays:cnt('fiber'),sodDays:cnt('sodium'),sugDays:cnt('addedSugar'),
     w0:ws[0]||null, w1:ws[ws.length-1]||null};
 }
 function vMonth(){
@@ -668,6 +747,10 @@ function vMonth(){
     <div class="stat"><b>${st.cal??'–'}</b><span>avg calories/day</span></div>
     ${st.onTarget!=null?`<div class="stat"><b>${st.onTarget}/${st.foodDays}</b><span>days within goal</span></div>`:''}
     <div class="stat"><b>${st.avgDef!=null?Math.round(st.avgDef):'–'}</b><span>avg daily deficit</span></div>
+    <div class="stat"><b>${st.protDays}/${st.foodDays}</b><span>days protein on target</span></div>
+    <div class="stat"><b>${st.fibDays}/${st.foodDays}</b><span>days fiber hit</span></div>
+    <div class="stat"><b>${st.sodDays}/${st.foodDays}</b><span>days sodium within limit</span></div>
+    <div class="stat"><b>${st.sugDays}/${st.foodDays}</b><span>days added sugar within limit</span></div>
     <div class="stat"><b>${r1(st.protein)}</b><span>avg protein (g)</span></div>
     <div class="stat"><b>${r1(st.fiber)}</b><span>avg fiber (g)</span></div>
     <div class="stat"><b>${r1(st.addedSugar)}</b><span>avg added sugar (g)</span></div>
@@ -957,6 +1040,7 @@ function digest(ym){
   L.push(`My goals for the month: ${m.intentions||'(none written)'}`);
   const c=calc();
   L.push(`My target: ${st.tgt?st.tgt+' calories/day':'not set'}${S.profile.pace?`; losing ${S.profile.pace} lb/week`:''}${S.profile.goal?`; goal weight ${S.profile.goal} lb`:''}.`);
+  { const T=targets(); L.push(`My nutrient targets: protein ${T.protein.t} g (${T.protein.lo}-${T.protein.hi}); carbs ${T.carbs.t} g; fat ${T.fat.t} g; fiber at least ${T.fiber.t} g; saturated fat at most ${T.sat.t} g; added sugar at most ${T.addedSugar.t} g; sodium at most ${T.sodium.t} mg. Days on target this month: protein ${st.protDays}/${st.foodDays}, fiber ${st.fibDays}/${st.foodDays}, sodium within limit ${st.sodDays}/${st.foodDays}, added sugar within limit ${st.sugDays}/${st.foodDays}. Context: family history of high blood pressure and diabetes, blood pressure readings above ideal, fatty liver.`); }
   L.push(`Averages (on days logged): ${st.foodDays} days of food logged; calories ${st.cal??'n/a'}; protein ${r1(st.protein)} g; fiber ${r1(st.fiber)} g; added sugar ${r1(st.addedSugar)} g; sodium ${st.sodium!=null?Math.round(st.sodium):'n/a'} mg; water ${r1(st.water)} oz; average daily calorie deficit ${st.avgDef!=null?Math.round(st.avgDef):'n/a'}; ${st.plants} different plants eaten${st.w0&&st.w1?`; weight ${st.w0.w} to ${st.w1.w} lb`:''}.`);
   L.push('DAILY ENTRIES:');
   st.rows.slice().sort((a,b)=>a.date.localeCompare(b.date)).forEach(r=>{
