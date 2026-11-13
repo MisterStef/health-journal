@@ -684,17 +684,19 @@ function vGoal(){
   let info='';
   if(c){
     const goal=+p.goal, diff=goal?c.w-goal:null;
+    const eff=Math.max(0,Math.min(+p.pace||0,(c.tdee-c.target)/500));
     info=`<div class="stats" style="margin:12px 0">
       <div class="stat"><b>${c.w}</b><span>current weight (lb)</span></div>
       <div class="stat"><b>${goal||'–'}</b><span>goal weight (lb)</span></div>
       <div class="stat"><b>${diff!=null?(diff>0?diff.toFixed(1):'0'):'–'}</b><span>lb to go</span></div>
       <div class="stat"><b>${c.tdee}</b><span>est. cal to maintain</span></div>
       <div class="stat"><b>${tgt}</b><span>daily calorie goal</span></div>
-      ${diff>0&&+p.pace>0&&!(+p.custom>0)?`<div class="stat"><b>${Math.ceil(diff/p.pace)}</b><span>weeks at ${p.pace} lb/wk</span></div>`:''}
+      ${diff>0&&+p.pace>0&&!(+p.custom>0)&&eff>0.05?`<div class="stat"><b>${Math.ceil(diff/eff)}</b><span>weeks at ${r1(eff)} lb/wk</span></div>`:''}
     </div>
     <div class="note">For reference, a BMI of 18.5–24.9 at your height is about ${c.bmiLo}–${c.bmiHi} lb. BMI is a rough screening tool and ignores muscle, build and age, so treat it as one data point, not a verdict.</div>
     ${c.limited&&!(+p.custom>0)?`<div class="warn">That pace would put you under ${c.floor} calories a day, so I held your goal at ${c.floor}. Slower is safer: a smaller daily gap is easier to keep up and easier on your body.</div>`:''}`;
   } else info='<div class="note" style="margin-top:10px">Fill in your age, height and current weight to see an estimated daily calorie goal.</div>';
+  if(+p.pace>=2) info+='<div class="warn">2 lb a week means about a 1,000 calorie daily gap, the top of what is generally considered safe. It suits people with more weight to lose and gets hard to sustain as you get closer to your goal. Your goal never drops below the minimum of '+(p.sex==='m'?1500:1200)+' calories, so the pace may come out slower than 2 lb. Please check with a doctor or dietitian first.</div>';
   return `<div class="card"><h2>My goal</h2>
     <div class="two">
       <div><label for="g-sex">Formula uses</label><select id="g-sex" data-pf="sex"><option value="f" ${p.sex==='f'?'selected':''}>Female</option><option value="m" ${p.sex==='m'?'selected':''}>Male</option></select></div>
@@ -702,7 +704,7 @@ function vGoal(){
       <div><label for="g-h">Height (inches)</label><input id="g-h" data-pf="height" type="number" inputmode="decimal" value="${esc(p.height)}" placeholder="e.g. 68"></div>
       <div><label for="g-w">Current weight (lb)</label><input id="g-w" data-pf="weight" type="number" inputmode="decimal" value="${esc(p.weight)}" placeholder="logged weights override this"></div>
       <div><label for="g-goal">Goal weight (lb)</label><input id="g-goal" data-pf="goal" type="number" inputmode="decimal" value="${esc(p.goal)}"></div>
-      <div><label for="g-pace">Pace</label><select id="g-pace" data-pf="pace">${[[0,'Maintain'],[0.5,'Gentle · 0.5 lb/week'],[1,'Steady · 1 lb/week']].map(([v,l])=>`<option value="${v}" ${+p.pace===v?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div><label for="g-pace">Pace</label><select id="g-pace" data-pf="pace">${[[0,'Maintain'],[0.5,'Gentle · 0.5 lb/week'],[1,'Steady · 1 lb/week'],[1.5,'Faster · 1.5 lb/week'],[2,'Aggressive · 2 lb/week']].map(([v,l])=>`<option value="${v}" ${+p.pace===v?'selected':''}>${l}</option>`).join('')}</select></div>
     </div>
     <label for="g-date" style="margin-top:10px">Date I want to reach my goal weight (optional)</label>
     <input id="g-date" data-pf="goalDate" type="date" value="${esc(p.goalDate||'')}">
