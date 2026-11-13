@@ -1,5 +1,5 @@
 // Health Journal service worker: caches the app shell so it opens offline.
-const CACHE = 'health-journal-v1';
+const CACHE = 'health-tracker-v2';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
 
 self.addEventListener('install', e => {
