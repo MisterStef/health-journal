@@ -806,9 +806,11 @@ function verdict(wb,tdef){
 function vBalance(){
   const d=day(S.date), c=calc();
   const act=`<div class="card"><h2>Activity from Samsung Health</h2>
-    <div class="note" style="margin-bottom:8px">Open Samsung Health and copy today’s numbers. Fill in whichever you have: total calories burned is the most direct, active calories also works.</div>
+    <div class="note" style="margin-bottom:8px">Type in today’s numbers from Samsung Health, or import a file of past days. Total calories burned is the most direct; active calories also works.</div>
     <div class="two"><div><label for="b-act">Active calories burned (kcal)</label><input id="b-act" data-f="active" type="number" inputmode="numeric" min="0" value="${esc(d.active??'')}" placeholder="e.g. 450"></div>
-    <div><label for="b-tot">Total calories burned (kcal)</label><input id="b-tot" data-f="burned" type="number" inputmode="numeric" min="0" value="${esc(d.burned??'')}" placeholder="optional"></div></div></div>`;
+    <div><label for="b-tot">Total calories burned (kcal)</label><input id="b-tot" data-f="burned" type="number" inputmode="numeric" min="0" value="${esc(d.burned??'')}" placeholder="optional"></div></div>
+    ${+d.steps>0?`<div class="note" style="margin-top:8px">${Math.round(+d.steps).toLocaleString()} steps imported for this day.</div>`:''}
+    <div class="row" style="margin-top:10px"><span class="btn ghost small filebtn">Import activity file<input type="file" accept="application/json,.json" data-import="1"></span></div></div>`;
   return dateBar()+act+`<div id="balres">${balanceResult()}</div>`;
 }
 function refreshBal(){ const g=$('#balres'); if(g) g.innerHTML=balanceResult(); }
@@ -1242,6 +1244,11 @@ function importData(file){
   r.onload=()=>{
     try{
       const o=JSON.parse(r.result);
+      if(o&&o.app==='health-journal-activity'&&o.days&&typeof o.days==='object'){
+        let n=0, kept=0;
+        Object.keys(o.days).forEach(k=>{ const a=o.days[k]||{}; editDay(k,d=>{ if(a.steps>0) d.steps=+a.steps; if(a.active>0){ if(d.active===undefined||d.active===null||d.active===''){ d.active=Math.round(+a.active); n++; } else kept++; } }); });
+        saveLocal(); render(); setSync(`Imported active calories for ${n} day${n===1?'':'s'}${kept?` (kept ${kept} you had already entered)`:''}`); return;
+      }
       if(!o||o.app!=='health-journal'||typeof o.days!=='object') throw new Error('bad file');
       S.days=Object.assign({},S.days,o.days); S.months=Object.assign({},S.months,o.months||{}); S.foods=Object.assign({},S.foods,o.products||{});
       if(o.profile) S.profile=Object.assign({},S.profile,o.profile,FIXED);
