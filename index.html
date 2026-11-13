@@ -159,6 +159,10 @@ body[data-view="water"] .dock,body[data-view="settings"] .dock{display:none}
 .capm b{font:600 15px var(--display)}
 .cap .btn{border-radius:999px;white-space:nowrap}
 
+/* undo toast */
+.toast{position:fixed;left:50%;bottom:calc(138px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:8;display:flex;align-items:center;gap:6px;padding:6px 6px 6px 16px;border-radius:999px;background:var(--ink);color:var(--bg);font-size:14px;font-weight:500;box-shadow:0 12px 30px -12px rgba(0,0,0,.5);white-space:nowrap;animation:rise .3s var(--ease) both}
+.toast button{border:0;background:color-mix(in srgb,var(--bg) 18%,transparent);color:var(--bg);font-weight:600;border-radius:999px;padding:7px 14px}
+body[data-view="water"] .toast{bottom:calc(90px + env(safe-area-inset-bottom))}
 /* water tank */
 .card.tank{position:relative;overflow:hidden;padding:0;min-height:250px}
 .tank-fill{position:absolute;inset:0;background:var(--tank);will-change:transform}
@@ -218,6 +222,7 @@ body[data-view="water"] .dock,body[data-view="settings"] .dock{display:none}
   <main id="view"></main>
 </div>
 <div class="dock" id="dock"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <div class="scanner" id="scanner" hidden><video id="scanvideo" playsinline muted></video><div class="box"></div><div class="bar"><span>Point at the barcode</span><button class="btn" data-act="stopscan">Cancel</button></div></div>
 
 <script>
@@ -497,7 +502,16 @@ function ringArc(c,r,w,color,pct,key){
   pct=Math.max(0,Math.min(100,pct));
   return `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${color}" stroke-opacity=".17" stroke-width="${w}"/><circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" pathLength="100" stroke-dasharray="100 100" ${pct<=0?'stroke-opacity="0"':''} data-anim="${key}" data-prop="stroke-dashoffset" data-from="100" style="stroke-dashoffset:${(100-pct).toFixed(2)}" transform="rotate(-90 ${c} ${c})"/>`;
 }
-let lastTab=null, enterTimer=0;
+let lastTab=null, enterTimer=0, toastTimer=0;
+function toast(msg,act,data){
+  const t=$('#toast'); t.innerHTML=`<span>${esc(msg)}</span>${act?`<button data-act="${act}" ${data||''}>Undo</button>`:''}`; t.hidden=false;
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>{ t.hidden=true; },6000);
+}
+function addWater(oz){
+  const id=uid(), date=S.date;
+  editDay(date,d=>{ d.water.push({id,ml:Math.round(oz*OZ),t:Date.now()}); });
+  render(); toast(`Added ${oz} oz`,'undowater',`data-id="${id}" data-d="${date}"`);
+}
 function render(){
   const nav=$('#tabs');
   if(!nav.children.length) nav.innerHTML=TABS.map(([k,l])=>`<button role="tab" data-tab="${k}"><span class="nic">${ic(k)}</span>${l}</button>`).join('');
@@ -743,7 +757,7 @@ function vWater(){
     <div class="tank-c"><div class="tank-n" role="img" aria-label="${Math.round(drunk/OZ)} of ${Math.round(g.oz)} ounces"><span data-count="${Math.round(drunk/OZ)}" data-ck="woz">${Math.round(drunk/OZ)}</span><small>of ${Math.round(g.oz)} oz</small></div>
     <div class="tank-s">${left>0?Math.round(left/OZ)+' oz to go':'Goal reached'}</div><div class="note">${esc(paceMsg)}</div>
     <div class="row" style="margin-top:18px">${[8,12,16,24].map(n=>`<button class="btn water small" data-act="water" data-oz="${n}">+${n} oz</button>`).join('')}</div>
-    <div class="row" style="margin-top:8px"><input id="w-custom" type="number" inputmode="decimal" min="0" placeholder="Other amount (oz)" style="width:170px" aria-label="Custom ounces"><button class="btn ghost small" data-act="watercustom">Add</button></div>
+    <div class="row" style="margin-top:8px"><input id="w-custom" type="number" inputmode="decimal" min="0" placeholder="Other amount (oz)" style="width:170px" aria-label="Custom ounces"><button class="btn ghost small" data-act="watercustom">Add</button><button class="btn ghost small" data-act="undolast" ${(d.water||[]).length?'':'disabled'}>Remove last drink</button></div>
     <div class="note" style="margin-top:10px">Log any fluid you drink. Plain water is best.</div></div>
     ${g.assumed?'<div class="tank-c" style="padding-top:0"><div class="warn">Add your weight in the Body tab for an accurate baseline.</div></div>':''}</div>
   <div class="card"><h2>How your goal is calculated</h2>
@@ -1128,9 +1142,11 @@ document.addEventListener('click',e=>{
     case 'estaddall': { while(S.est&&S.est.items&&S.est.items.length) addEstItem(0); break; }
     case 'estclear': S.est=null; render(); break;
     case 'rmphoto': { const kind=t.dataset.kind; if(kind==='label'){ if(S.draft.label){try{URL.revokeObjectURL(S.draft.label.url)}catch(e){}} S.draft.label=null; } else { const f=S.draft.files.splice(+t.dataset.i,1)[0]; if(f){try{URL.revokeObjectURL(f.url)}catch(e){}} } render(); break; }
-    case 'water': editDay(S.date,d=>{ d.water.push({id:uid(),ml:Math.round(+t.dataset.oz*OZ),t:Date.now()}); }); render(); break;
-    case 'watercustom': { const v=+($('#w-custom')||{}).value; if(v>0){ editDay(S.date,d=>{ d.water.push({id:uid(),ml:Math.round(v*OZ),t:Date.now()}); }); render(); } break; }
-    case 'delwater': editDay(S.date,d=>{ d.water=d.water.filter(w=>w.id!==t.dataset.id); }); render(); break;
+    case 'water': addWater(+t.dataset.oz); break;
+    case 'watercustom': { const v=+($('#w-custom')||{}).value; if(v>0) addWater(Math.round(v*10)/10); break; }
+    case 'delwater': editDay(S.date,d=>{ d.water=d.water.filter(w=>w.id!==t.dataset.id); }); render(); toast('Drink removed'); break;
+    case 'undowater': { const dd=t.dataset.d||S.date; editDay(dd,d=>{ d.water=d.water.filter(w=>w.id!==t.dataset.id); }); $('#toast').hidden=true; render(); break; }
+    case 'undolast': { const list=(day(S.date).water||[]); const last=list[list.length-1]; if(last){ editDay(S.date,d=>{ d.water=d.water.filter(w=>w.id!==last.id); }); render(); toast(`Removed ${Math.round(last.ml/OZ*10)/10} oz`); } break; }
     case 'range': S.range=+t.dataset.n; render(); break;
     case 'mprev': S.month=addMonths(S.month,-1); render(); break;
     case 'mnext': if(S.month<todayStr().slice(0,7)){ S.month=addMonths(S.month,1); render(); } break;
