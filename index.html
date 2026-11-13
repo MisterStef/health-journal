@@ -104,6 +104,15 @@ button.chip:active{transform:scale(.95)}
 .gt.m label{color:#1f7fbf}.gt.m .gbar i{background:#3aaee8}
 .gt.c label{color:#7a45d6}.gt.c .gbar i{background:#8d5cf0}
 @media (prefers-color-scheme: dark){.gt.s label{color:#a6e65c}.gt.m label{color:#62c3f5}.gt.c label{color:#b48cff}}
+.sbar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:6px}
+.sbar i{display:block;height:100%;border-radius:3px;background:var(--accent)}
+.sbar i.mid{background:var(--amber)} .sbar i.low{background:var(--warn)}
+.sp{padding:11px 0;border-top:1px solid var(--line)}
+.sp:first-of-type{border-top:0}
+.sp .top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.sp .top b{font:600 15px var(--display)} .sp .top span{font:600 15px var(--display);font-variant-numeric:tabular-nums}
+.sp .d{font-size:12.5px;color:var(--mute);margin-top:3px;line-height:1.4}
+.sp .w{font-size:11.5px;color:var(--mute);font-weight:400}
 .stat span{font-size:12px;color:var(--mute);line-height:1.3;display:block;margin-top:3px}
 .empty{color:var(--mute);font-size:14px;padding:8px 0}
 .note{font-size:13px;color:var(--mute);line-height:1.5}
@@ -497,11 +506,12 @@ function chart(vals,labels,opt={}){
 }
 
 /* ---------- views ---------- */
-const TABS=[['body','Body'],['food','Food'],['water','Water'],['balance','Activity'],['progress','Progress']];
+const TABS=[['body','Body'],['food','Food'],['water','Water'],['balance','Activity'],['sleep','Sleep'],['progress','Progress']];
 const IC={
   body:'<rect x="4.5" y="4.5" width="15" height="15" rx="4"/><path d="M8.5 11a5 5 0 0 1 7 0"/><path d="M12 12.5l1.5-2.4"/>',
   food:'<path d="M7 4v5a2 2 0 0 0 2 2 2 2 0 0 0 2-2V4"/><path d="M9 4v16"/><path d="M17 20v-7h-2.5c0-4.5 .8-7.5 2.5-9z"/>',
   water:'<path d="M12 3.5c3.2 3.6 5.5 6.6 5.5 9.9a5.5 5.5 0 0 1-11 0c0-3.3 2.3-6.3 5.5-9.9z"/>',
+  sleep:'<path d="M20 14.200A8 8 0 0 1 9.800 4a8 8 0 1 0 10.200 10.200z"/><path d="M16 3.500v3M14.500 5h3"/>',
   balance:'<path d="M12.5 3c.4 2.8-1.2 4.4-2.7 6.2C8.600 10.600 7.500 12 7.500 14a4.500 4.500 0 0 0 9 0c0-1.700-.7-3.200-1.700-4.400-.4 1-1 1.700-1.900 2.100.5-2.700.300-5.900-.4-8.700z"/>',
   progress:'<path d="M4 19.500h16"/><path d="M5 15l4.500-4.500 3.500 3L19 7"/><path d="M15 7h4v4"/>',
   chevL:'<path d="M14.500 6l-6 6 6 6"/>', chevR:'<path d="M9.500 6l6 6-6 6"/>', chevD:'<path d="M6 9.500l6 6 6-6"/>',
@@ -531,7 +541,7 @@ function render(){
   renderBanner();
   const v=$('#view'), fresh=S.tab!==lastTab; lastTab=S.tab;
   v.classList.remove('enter');
-  v.innerHTML = ({body:vBody,food:vFood,water:vWater,balance:vBalance,progress:vProgress,settings:vSettings})[S.tab]();
+  v.innerHTML = ({body:vBody,food:vFood,water:vWater,balance:vBalance,sleep:vSleep,progress:vProgress,settings:vSettings})[S.tab]();
   if(fresh){ void v.offsetWidth; v.classList.add('enter'); clearTimeout(enterTimer); enterTimer=setTimeout(()=>v.classList.remove('enter'),900); window.scrollTo(0,0); }
   S.rev=null;
   renderDock(fresh);
@@ -827,9 +837,87 @@ function vBalance(){
     <div class="gtiles">${tile('s','steps','Steps','steps',G.steps,'0')}${tile('m','activeMin','Active time','min',G.min,'0')}${tile('c','active','Activity cal','kcal',G.cal,'0')}</div>
     <div class="two" style="margin-top:12px"><div><label for="b-tot">Total burned calories (kcal)</label><input id="b-tot" data-f="burned" type="number" inputmode="numeric" min="0" value="${esc(d.burned??'')}" placeholder="e.g. 2400"></div>
     <div><label for="b-dist">Distance while active (mi)</label><input id="b-dist" data-f="distance" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(d.distance??'')}" placeholder="0.00"></div></div>
-    <div class="row" style="margin-top:12px"><span class="btn ghost small filebtn">Import activity file<input type="file" accept="application/json,.json" data-import="1"></span></div></div>`;
+    <div class="row" style="margin-top:12px"><span class="btn ghost small filebtn">Import Memory.fit file<input type="file" accept="application/json,.json" data-import="1"></span></div></div>`;
   return dateBar()+act+`<div id="balres">${balanceResult()}</div>`;
 }
+
+/* ---------- sleep: score built from published sleep-quality criteria ---------- */
+const hmin=s=>{ if(!s||!/^\d{1,2}:\d{2}$/.test(String(s))) return null; const [a,b]=String(s).split(':').map(Number); return a*60+b; };
+const fmtDur=m=>{ m=Math.round(m); return Math.floor(m/60)+' h '+String(m%60).padStart(2,'0')+' m'; };
+const fmtClock=m=>{ m=((Math.round(m)%1440)+1440)%1440; const h24=Math.floor(m/60), mm=m%60; return ((h24%12)||12)+':'+String(mm).padStart(2,'0')+(h24<12?' AM':' PM'); };
+const clamp01=x=>Math.max(0,Math.min(1,x));
+function sleepCalc(date){
+  const s=(S.days[date]||{}).sleep; if(!s) return null;
+  const b=hmin(s.bed), w=hmin(s.wake); if(b==null||w==null) return null;
+  let inBed=w-b; if(inBed<=0) inBed+=1440; if(inBed<60||inBed>1080) return null;
+  const blank=v=>v===''||v==null, aw=blank(s.awake)?null:Math.max(0,+s.awake||0);
+  const deep=+s.deep||0, rem=+s.rem||0, light=+s.light||0, st=deep+rem+light;
+  let asleep,awake;
+  if(st>0){ asleep=Math.min(st,inBed); awake=aw!=null?aw:Math.max(0,inBed-asleep); }
+  else if(aw!=null){ awake=Math.min(aw,inBed); asleep=inBed-awake; }
+  else { asleep=inBed; awake=null; }
+  const staged=st>0&&(!blank(s.deep)||!blank(s.rem));
+  return {date,bed:b,wake:w,inBed,asleep,awake,eff:awake!=null?asleep/inBed:null,
+    deepPct:staged?deep/asleep*100:null, remPct:staged?rem/asleep*100:null, mid:((b+720)%1440)+inBed/2};
+}
+/* weights: duration 35, efficiency 20, regularity 20, architecture 15, awake time 10. Missing factors are left out and the rest re-weighted. */
+function sleepScore(date){
+  const c=sleepCalc(date); if(!c) return null;
+  const lin=(x,a,b)=>clamp01((x-a)/(b-a))*100, parts=[];
+  const hrs=c.asleep/60;
+  parts.push({k:'dur',l:'Duration',w:35,s:hrs<7?lin(hrs,4,7):hrs<=9?100:Math.max(50,100-25*(hrs-9)),v:fmtDur(c.asleep),d:'Adults need 7 to 9 hours (AASM and Sleep Research Society consensus).'});
+  if(c.eff!=null) parts.push({k:'eff',l:'Efficiency',w:20,s:lin(c.eff*100,65,90),v:Math.round(c.eff*100)+'%',d:'Share of time in bed spent asleep. 85% or more is good (National Sleep Foundation).'});
+  const dates=[]; for(let i=0;i<7;i++) dates.push(addDays(date,-i));
+  const mids=dates.map(sleepCalc).filter(Boolean).map(x=>x.mid);
+  if(mids.length>=3){ const mean=mids.reduce((a,b)=>a+b,0)/mids.length, sd=Math.sqrt(mids.reduce((a,b)=>a+(b-mean)**2,0)/mids.length);
+    parts.push({k:'reg',l:'Regularity',w:20,s:100-lin(sd,30,120),v:'±'+Math.round(sd)+' min',d:`How much the middle of your sleep moves night to night (last ${mids.length} nights). Under 30 minutes is steady; irregular timing is linked to poorer health.`}); }
+  if(c.deepPct!=null){ const f=(x,lo,hi)=>x>=lo&&x<=hi?100:x<lo?Math.max(0,x/lo*100):Math.max(40,100-(x-hi)*4);
+    const sc=[f(c.deepPct,13,23)]; if(c.remPct!=null) sc.push(f(c.remPct,18,28));
+    parts.push({k:'arch',l:'Sleep stages',w:15,s:sc.reduce((a,b)=>a+b,0)/sc.length,v:`Deep ${Math.round(c.deepPct)}% · REM ${Math.round(c.remPct||0)}%`,d:'Typical adults get about 13 to 23% deep and 18 to 28% REM. Wrist-band stage tracking is only a rough guide.'}); }
+  if(c.awake!=null) parts.push({k:'waso',l:'Time awake',w:10,s:100-lin(c.awake,20,90),v:Math.round(c.awake)+' min',d:'Minutes awake during the night. 20 or fewer is good (National Sleep Foundation).'});
+  const W=parts.reduce((a,p)=>a+p.w,0), score=Math.round(parts.reduce((a,p)=>a+p.w*p.s,0)/W);
+  return {score,parts,c,label:score>=85?'Excellent':score>=70?'Good':score>=55?'Fair':'Needs work'};
+}
+const toneOf=s=>s>=70?'':s>=55?'mid':'low';
+function sleepRes(){
+  const r=sleepScore(S.date), t=S.date===todayStr();
+  if(!r) return `<div class="card"><h2>${t?'Last night':'Night ending '+esc(fmtDate(S.date))}</h2><div class="empty">No sleep recorded for this morning yet. Add your bed and wake times below, or import a Memory.fit file from the Activity or Sleep tab.</div></div>`;
+  const c=r.c, col=r.score>=70?'var(--mint)':r.score>=55?'var(--energy)':'var(--ember)';
+  const nights=[]; for(let i=6;i>=0;i--){ const k=addDays(S.date,-i), x=sleepCalc(k); nights.push({k,m:x?Math.round(x.asleep/60*10)/10:null,s:x?sleepScore(k).score:null}); }
+  const withScore=nights.filter(n=>n.s!=null), avgS=withScore.length?Math.round(withScore.reduce((a,n)=>a+n.s,0)/withScore.length):null;
+  const avgH=withScore.length?withScore.reduce((a,n)=>a+n.m,0)/withScore.length:null;
+  const debt=nights.filter(n=>n.m!=null).reduce((a,n)=>a+Math.max(0,7-n.m),0);
+  return `<div class="card hero"><div class="hero-face"><div class="dial"><svg viewBox="0 0 156 156" role="img" aria-label="Sleep score ${r.score} out of 100, ${r.label}">${ringArc(78,66,12,col,r.score,'sleep-ring')}</svg>
+      <div class="dial-c"><b data-count="${r.score}" data-ck="sleepscore">${r.score}</b><span>${r.label}</span></div></div>
+    <div class="legend">
+      <div class="lg"><i style="background:${col}"></i><span>Asleep</span><b>${fmtDur(c.asleep)}</b></div>
+      <div class="lg"><i style="background:var(--sky)"></i><span>In bed</span><b style="font-size:16px">${fmtClock(c.bed)} to ${fmtClock(c.wake)}</b></div>
+      ${c.eff!=null?`<div class="lg"><i style="background:var(--mint)"></i><span>Efficiency</span><b>${Math.round(c.eff*100)}%</b></div>`:''}
+    </div></div></div>
+  <div class="card"><h2>What made the score</h2>
+    ${r.parts.map(p=>`<div class="sp"><div class="top"><b>${p.l} <span class="w">${Math.round(p.w/r.parts.reduce((a,x)=>a+x.w,0)*100)}% of score</span></b><span>${p.v}</span></div><div class="sbar"><i class="${toneOf(p.s)}" style="width:${Math.max(3,p.s).toFixed(0)}%"></i></div><div class="d">${p.d}</div></div>`).join('')}
+    ${r.parts.length<5?`<div class="note" style="margin-top:8px">Scored on ${r.parts.length} of 5 factors. The rest need more nights or details (awake time and stage minutes).</div>`:''}</div>
+  <div class="card"><h2>Last 7 nights</h2>
+    ${avgS!=null?`<div class="stats" style="margin-bottom:10px"><div class="stat"><b>${avgS}</b><span>average score</span></div><div class="stat"><b>${fmtDur(avgH*60)}</b><span>average asleep</span></div><div class="stat"><b>${debt>0?fmtDur(debt*60):'None'}</b><span>short of 7 h, total</span></div></div>`:''}
+    ${chart(nights.map(n=>n.m),nights.map(n=>fmtDate(n.k).replace(/^\w+, /,'')),{bar:true,target:7,tlabel:'7 h',label:'Hours asleep'})}</div>`;
+}
+function refreshSleep(){ const g=$('#sleepres'); if(g) g.innerHTML=sleepRes(); }
+function vSleep(){
+  const s=(S.days[S.date]||{}).sleep||{}, v=k=>esc(s[k]??'');
+  return dateBar()+`<div id="sleepres">${sleepRes()}</div>
+  <div class="card"><h2>${S.date===todayStr()?'Last night':'Night ending '+esc(fmtDate(S.date))}</h2>
+    <div class="note" style="margin-bottom:10px">Sleep is filed under the morning you woke up. Imported nights fill in automatically; you can also type them.</div>
+    <div class="two"><div><label for="sl-bed">Bedtime</label><input id="sl-bed" data-sf="bed" type="time" value="${v('bed')}"></div>
+    <div><label for="sl-wake">Wake time</label><input id="sl-wake" data-sf="wake" type="time" value="${v('wake')}"></div></div>
+    <label for="sl-awake" style="margin-top:10px">Minutes awake during the night (optional)</label><input id="sl-awake" data-sf="awake" type="number" inputmode="numeric" min="0" value="${v('awake')}" placeholder="e.g. 20">
+    <div class="three" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px">
+      <div><label for="sl-deep">Deep (min)</label><input id="sl-deep" data-sf="deep" type="number" inputmode="numeric" min="0" value="${v('deep')}" placeholder="optional"></div>
+      <div><label for="sl-rem">REM (min)</label><input id="sl-rem" data-sf="rem" type="number" inputmode="numeric" min="0" value="${v('rem')}" placeholder="optional"></div>
+      <div><label for="sl-light">Light (min)</label><input id="sl-light" data-sf="light" type="number" inputmode="numeric" min="0" value="${v('light')}" placeholder="optional"></div></div>
+    <div class="row" style="margin-top:12px"><span class="btn ghost small filebtn">Import Memory.fit file<input type="file" accept="application/json,.json" data-import="1"></span>${s.bed||s.wake?'<button class="btn ghost small" data-act="clearsleep">Clear this night</button>':''}</div></div>
+  <div class="card note"><b>How the score works.</b> It is a 0 to 100 score built from published sleep-quality criteria, not a medical test. Duration (35%) follows the AASM and Sleep Research Society recommendation of 7 or more hours. Efficiency (20%) and time awake (10%) use the National Sleep Foundation’s quality indicators (Ohayon et al., 2017). Regularity (20%) is the nightly shift in the middle of your sleep, a simplified form of the Sleep Regularity Index (Phillips et al., 2017). Sleep stages (15%) compare deep and REM share with typical adult ranges, and count least because wrist bands estimate stages roughly. A factor with no data is left out and the others are re-weighted. Poor sleep that lasts, loud snoring or daytime sleepiness are worth raising with your doctor.</div>`;
+}
+
 function refreshBal(){ const g=$('#balres'); if(g) g.innerHTML=balanceResult(); }
 function goalWeek(wb){
   const G=actGoals(), ds=wb.rows.map(r=>S.days[r.k]||{});
@@ -909,6 +997,7 @@ function monthStats(ym){
   const rows=ds.map(k=>S.days[k]).filter(Boolean);
   const foodDays=rows.filter(hasFood), tgt=targetCal();
   const tots=foodDays.map(dayTotals), av=k=>tots.length?avg(tots.map(t=>t[k])):null;
+  const sl=ds.map(sleepScore).filter(Boolean);
   const wDays=rows.filter(r=>waterMl(r)>0);
   const ws=ds.map(k=>S.days[k]?.weight?{k,w:+S.days[k].weight}:null).filter(Boolean);
   const cnt=k=>foodDays.filter(r=>{ const s=statusOf(k,dayTotals(r)[k],false); return s&&s.s==='ok'; }).length;
@@ -920,7 +1009,7 @@ function monthStats(ym){
     water:wDays.length?avg(wDays.map(r=>waterMl(r)/OZ)):null,
     onTarget:tgt?foodDays.filter(r=>dayCals(r)<=tgt*1.05).length:null, tgt,
     avgDef:defs.length?avg(defs):null, plants:plants.size,
-    alcTotal:tots.reduce((a,t)=>a+t.alcohol,0),alcFree:tots.filter(t=>t.alcohol<=0).length,protDays:cnt('protein'),fibDays:cnt('fiber'),sodDays:cnt('sodium'),sugDays:cnt('addedSugar'),
+    sleepN:sl.length,sleepH:sl.length?avg(sl.map(x=>x.c.asleep/60)):null,sleepS:sl.length?Math.round(avg(sl.map(x=>x.score))):null,alcTotal:tots.reduce((a,t)=>a+t.alcohol,0),alcFree:tots.filter(t=>t.alcohol<=0).length,protDays:cnt('protein'),fibDays:cnt('fiber'),sodDays:cnt('sodium'),sugDays:cnt('addedSugar'),
     w0:ws[0]||null, w1:ws[ws.length-1]||null};
 }
 function vMonth(){
@@ -936,6 +1025,7 @@ function vMonth(){
     <div class="stat"><b>${st.fibDays}/${st.foodDays}</b><span>days fiber hit</span></div>
     <div class="stat"><b>${st.sodDays}/${st.foodDays}</b><span>days sodium within limit</span></div>
     <div class="stat"><b>${st.sugDays}/${st.foodDays}</b><span>days added sugar within limit</span></div>
+    ${st.sleepN?`<div class="stat"><b>${st.sleepS}</b><span>avg sleep score (${st.sleepN} nights)</span></div><div class="stat"><b>${r1(st.sleepH)}</b><span>avg hours asleep</span></div>`:''}
     <div class="stat"><b>${r1(st.alcTotal)}</b><span>alcoholic drinks (${st.alcFree}/${st.foodDays} days alcohol-free)</span></div>
     <div class="stat"><b>${r1(st.protein)}</b><span>avg protein (g)</span></div>
     <div class="stat"><b>${r1(st.fiber)}</b><span>avg fiber (g)</span></div>
@@ -1175,6 +1265,7 @@ document.addEventListener('click',e=>{
     case 'water': addWater(+t.dataset.oz); break;
     case 'watercustom': { const v=+($('#w-custom')||{}).value; if(v>0) addWater(Math.round(v*10)/10); break; }
     case 'delwater': editDay(S.date,d=>{ d.water=d.water.filter(w=>w.id!==t.dataset.id); }); render(); toast('Drink removed'); break;
+    case 'clearsleep': editDay(S.date,d=>{ delete d.sleep; }); render(); break;
     case 'undowater': { const dd=t.dataset.d||S.date; editDay(dd,d=>{ d.water=d.water.filter(w=>w.id!==t.dataset.id); }); $('#toast').hidden=true; render(); break; }
     case 'undolast': { const list=(day(S.date).water||[]); const last=list[list.length-1]; if(last){ editDay(S.date,d=>{ d.water=d.water.filter(w=>w.id!==last.id); }); render(); toast(`Removed ${Math.round(last.ml/OZ*10)/10} oz`); } break; }
     case 'range': S.range=+t.dataset.n; render(); break;
@@ -1200,6 +1291,7 @@ document.addEventListener('input',e=>{
     editDay(S.date,d=>{ d[f]=v; }); renderDock();
     if($('#balres')) refreshBal();
     if(f==='steps'||f==='activeMin'||f==='active') refreshGoalBars();
+  } else if(t.dataset.sf){ const k=t.dataset.sf; editDay(S.date,d=>{ d.sleep=d.sleep||{}; d.sleep[k]=t.value; }); refreshSleep();
   } else if(t.dataset.mf){ editMonth(S.month,m=>{ m[t.dataset.mf]=t.value; });
   } else if(t.dataset.set){ const k=t.dataset.set; SET[k]=t.type==='checkbox'?t.checked:(k==='every'?+t.value:t.value.trim()); saveSet(); if(k==='remind'&&t.checked&&'Notification' in window&&Notification.permission==='default') Notification.requestPermission().then(()=>render());
   } else if(t.dataset.draft){ S.draft[t.dataset.draft]=t.value;
@@ -1232,7 +1324,7 @@ function digest(ym){
   L.push(`My goals for the month: ${m.intentions||'(none written)'}`);
   const c=calc();
   L.push(`My target: ${st.tgt?st.tgt+' calories/day':'not set'}${S.profile.pace?`; losing ${S.profile.pace} lb/week`:''}${S.profile.goal?`; goal weight ${S.profile.goal} lb`:''}.`);
-  { const T=targets(); L.push(`My nutrient targets: protein ${T.protein.t} g (${T.protein.lo}-${T.protein.hi}); carbs ${T.carbs.t} g; fat ${T.fat.t} g; fiber at least ${T.fiber.t} g; saturated fat at most ${T.sat.t} g; added sugar at most ${T.addedSugar.t} g; sodium at most ${T.sodium.t} mg. Days on target this month: protein ${st.protDays}/${st.foodDays}, fiber ${st.fibDays}/${st.foodDays}, sodium within limit ${st.sodDays}/${st.foodDays}, added sugar within limit ${st.sugDays}/${st.foodDays}. Alcohol this month: ${r1(st.alcTotal)} standard drinks, ${st.alcFree} of ${st.foodDays} logged days alcohol-free (daily limit ${T.alcohol.t}). Context: family history of high blood pressure and diabetes, blood pressure readings above ideal, fatty liver.`); }
+  { const T=targets(); L.push(`My nutrient targets: protein ${T.protein.t} g (${T.protein.lo}-${T.protein.hi}); carbs ${T.carbs.t} g; fat ${T.fat.t} g; fiber at least ${T.fiber.t} g; saturated fat at most ${T.sat.t} g; added sugar at most ${T.addedSugar.t} g; sodium at most ${T.sodium.t} mg. Days on target this month: protein ${st.protDays}/${st.foodDays}, fiber ${st.fibDays}/${st.foodDays}, sodium within limit ${st.sodDays}/${st.foodDays}, added sugar within limit ${st.sugDays}/${st.foodDays}. ${st.sleepN?`Sleep this month: ${st.sleepN} nights tracked, average ${r1(st.sleepH)} hours asleep, average sleep score ${st.sleepS} out of 100. `:''}Alcohol this month: ${r1(st.alcTotal)} standard drinks, ${st.alcFree} of ${st.foodDays} logged days alcohol-free (daily limit ${T.alcohol.t}). Context: family history of high blood pressure and diabetes, blood pressure readings above ideal, fatty liver.`); }
   L.push(`Averages (on days logged): ${st.foodDays} days of food logged; calories ${st.cal??'n/a'}; protein ${r1(st.protein)} g; fiber ${r1(st.fiber)} g; added sugar ${r1(st.addedSugar)} g; sodium ${st.sodium!=null?Math.round(st.sodium):'n/a'} mg; water ${r1(st.water)} oz; average daily calorie deficit ${st.avgDef!=null?Math.round(st.avgDef):'n/a'}; ${st.plants} different plants eaten${st.w0&&st.w1?`; weight ${st.w0.w} to ${st.w1.w} lb`:''}.`);
   L.push('DAILY ENTRIES:');
   st.rows.slice().sort((a,b)=>a.date.localeCompare(b.date)).forEach(r=>{
@@ -1274,9 +1366,9 @@ function importData(file){
     try{
       const o=JSON.parse(r.result);
       if(o&&o.app==='health-journal-activity'&&o.days&&typeof o.days==='object'){
-        let n=0, kept=0;
-        Object.keys(o.days).forEach(k=>{ const a=o.days[k]||{}; editDay(k,d=>{ if(a.steps>0) d.steps=+a.steps; if(a.activeMin>0&&(d.activeMin==null||d.activeMin==='')) d.activeMin=+a.activeMin; if(a.distance>0&&(d.distance==null||d.distance==='')) d.distance=+a.distance; if(a.burned>0&&(d.burned==null||d.burned==='')) d.burned=Math.round(+a.burned); if(a.active>0){ if(d.active===undefined||d.active===null||d.active===''){ d.active=Math.round(+a.active); n++; } else kept++; } }); });
-        saveLocal(); render(); setSync(`Imported active calories for ${n} day${n===1?'':'s'}${kept?` (kept ${kept} you had already entered)`:''}`); return;
+        let n=0, kept=0, ns=0;
+        Object.keys(o.days).forEach(k=>{ const a=o.days[k]||{}; editDay(k,d=>{ if(a.sleep&&a.sleep.bed&&(!d.sleep||!d.sleep.bed)){ d.sleep=Object.assign({},a.sleep); ns++; } if(a.steps>0) d.steps=+a.steps; if(a.activeMin>0&&(d.activeMin==null||d.activeMin==='')) d.activeMin=+a.activeMin; if(a.distance>0&&(d.distance==null||d.distance==='')) d.distance=+a.distance; if(a.burned>0&&(d.burned==null||d.burned==='')) d.burned=Math.round(+a.burned); if(a.active>0){ if(d.active===undefined||d.active===null||d.active===''){ d.active=Math.round(+a.active); n++; } else kept++; } }); });
+        saveLocal(); render(); setSync(`Imported ${n} day${n===1?'':'s'} of activity${ns?` and ${ns} night${ns===1?'':'s'} of sleep`:''}${kept?` (kept ${kept} you had already entered)`:''}`); return;
       }
       if(!o||o.app!=='health-journal'||typeof o.days!=='object') throw new Error('bad file');
       S.days=Object.assign({},S.days,o.days); S.months=Object.assign({},S.months,o.months||{}); S.foods=Object.assign({},S.foods,o.products||{});
