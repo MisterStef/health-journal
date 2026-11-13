@@ -93,6 +93,17 @@ button.chip:active{transform:scale(.95)}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:8px}
 .stat{background:var(--tile);border-radius:16px;padding:12px 13px}
 .stat b{display:block;font:700 23px/1.15 var(--display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.gtiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.gt{background:var(--tile);border-radius:18px;padding:11px 10px 10px;min-width:0}
+.gt label{font:600 12.5px/1.2 var(--display);margin:0 0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gt input{background:var(--card);padding:8px 6px;text-align:center;font:700 20px/1.2 var(--display);letter-spacing:-.02em;font-variant-numeric:tabular-nums;border-radius:12px}
+.gt .goal{font-size:11.5px;color:var(--mute);text-align:center;margin:6px 0 6px;font-variant-numeric:tabular-nums}
+.gbar{height:5px;border-radius:3px;background:var(--line);overflow:hidden}
+.gbar i{display:block;height:100%;border-radius:3px;width:0;transition:width .6s var(--ease)}
+.gt.s label{color:#4d8f1f}.gt.s .gbar i{background:#7cc62f}
+.gt.m label{color:#1f7fbf}.gt.m .gbar i{background:#3aaee8}
+.gt.c label{color:#7a45d6}.gt.c .gbar i{background:#8d5cf0}
+@media (prefers-color-scheme: dark){.gt.s label{color:#a6e65c}.gt.m label{color:#62c3f5}.gt.c label{color:#b48cff}}
 .stat span{font-size:12px;color:var(--mute);line-height:1.3;display:block;margin-top:3px}
 .empty{color:var(--mute);font-size:14px;padding:8px 0}
 .note{font-size:13px;color:var(--mute);line-height:1.5}
@@ -803,17 +814,33 @@ function verdict(wb,tdef){
   if(r>=0.5) return {tone:'',title:'Slightly behind',msg:`Averaging a ${Math.round(a)} cal/day deficit against ${Math.round(tdef)}. About ${Math.round(tdef-a)} cal/day more (a snack or a 20-minute walk) would close the gap.`};
   return {tone:'warn',title:'Behind pace',msg:a>0?`Averaging only a ${Math.round(a)} cal/day deficit against ${Math.round(tdef)}.`:`You are averaging about ${Math.round(-a)} cal/day over what you burn.`};
 }
+function actGoals(){ const p=S.profile; return {steps:+p.stepGoal||6000,min:+p.minGoal||90,cal:+p.calGoal||500}; }
+function refreshGoalBars(){
+  document.querySelectorAll('.gbar i[data-g]').forEach(el=>{ const v=+(S.days[S.date]||{})[el.dataset.g]||0; el.style.width=Math.min(100,v/+el.dataset.goal*100).toFixed(0)+'%'; });
+}
 function vBalance(){
   const d=day(S.date), c=calc();
+  const G=actGoals(), pc=(v,g)=>Math.max(0,Math.min(100,(+v||0)/g*100));
+  const tile=(cls,key,label,unit,goal,ph)=>`<div class="gt ${cls}"><label for="b-${key}">${label}</label><input id="b-${key}" data-f="${key}" type="number" inputmode="numeric" min="0" value="${esc(d[key]??'')}" placeholder="${ph}"><div class="goal">/ ${goal.toLocaleString()} ${unit}</div><div class="gbar"><i data-g="${key}" data-goal="${goal}" style="width:${pc(d[key],goal).toFixed(0)}%"></i></div></div>`;
   const act=`<div class="card"><h2>Activity from Samsung Health</h2>
-    <div class="note" style="margin-bottom:8px">Type in today’s numbers from Samsung Health, or import a file of past days. Total calories burned is the most direct; active calories also works.</div>
-    <div class="two"><div><label for="b-act">Active calories burned (kcal)</label><input id="b-act" data-f="active" type="number" inputmode="numeric" min="0" value="${esc(d.active??'')}" placeholder="e.g. 450"></div>
-    <div><label for="b-tot">Total calories burned (kcal)</label><input id="b-tot" data-f="burned" type="number" inputmode="numeric" min="0" value="${esc(d.burned??'')}" placeholder="optional"></div></div>
-    ${+d.steps>0?`<div class="note" style="margin-top:8px">${Math.round(+d.steps).toLocaleString()} steps imported for this day.</div>`:''}
-    <div class="row" style="margin-top:10px"><span class="btn ghost small filebtn">Import activity file<input type="file" accept="application/json,.json" data-import="1"></span></div></div>`;
+    <div class="note" style="margin-bottom:10px">Copy today’s numbers from Samsung Health. Total calories burned is the most direct for your daily balance; activity calories also works.</div>
+    <div class="gtiles">${tile('s','steps','Steps','steps',G.steps,'0')}${tile('m','activeMin','Active time','min',G.min,'0')}${tile('c','active','Activity cal','kcal',G.cal,'0')}</div>
+    <div class="two" style="margin-top:12px"><div><label for="b-tot">Total burned calories (kcal)</label><input id="b-tot" data-f="burned" type="number" inputmode="numeric" min="0" value="${esc(d.burned??'')}" placeholder="e.g. 2400"></div>
+    <div><label for="b-dist">Distance while active (mi)</label><input id="b-dist" data-f="distance" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(d.distance??'')}" placeholder="0.00"></div></div>
+    <div class="row" style="margin-top:12px"><span class="btn ghost small filebtn">Import activity file<input type="file" accept="application/json,.json" data-import="1"></span></div></div>`;
   return dateBar()+act+`<div id="balres">${balanceResult()}</div>`;
 }
 function refreshBal(){ const g=$('#balres'); if(g) g.innerHTML=balanceResult(); }
+function goalWeek(wb){
+  const G=actGoals(), ds=wb.rows.map(r=>S.days[r.k]||{});
+  const has=k=>ds.filter(d=>+d[k]>0);
+  if(!has('steps').length&&!has('activeMin').length&&!has('active').length) return '';
+  const hit=(k,g)=>ds.filter(d=>+d[k]>=g).length, avgK=k=>{ const a=has(k); return a.length?Math.round(a.reduce((s,d)=>s+ +d[k],0)/a.length):null; };
+  return `<div style="margin-top:12px"><h3>Daily goals, last 7 days</h3><div class="stats">
+    <div class="stat"><b>${hit('steps',G.steps)}/7</b><span>days hit ${G.steps.toLocaleString()} steps${avgK('steps')!=null?` (avg ${avgK('steps').toLocaleString()})`:''}</span></div>
+    <div class="stat"><b>${hit('activeMin',G.min)}/7</b><span>days hit ${G.min} active min${avgK('activeMin')!=null?` (avg ${avgK('activeMin')})`:''}</span></div>
+    <div class="stat"><b>${hit('active',G.cal)}/7</b><span>days hit ${G.cal} activity cal${avgK('active')!=null?` (avg ${avgK('active')})`:''}</span></div></div></div>`;
+}
 function balanceResult(){
   const c=calc(), p=S.profile;
   if(!c) return '';
@@ -845,6 +872,7 @@ function balanceResult(){
       <div class="stat"><b>${wb.estLb!=null?r1(wb.estLb):'–'}</b><span>est. lb/week (goal ${p.pace||0})</span></div>
       <div class="stat"><b>${wb.actual!=null?r1(wb.actual):'–'}</b><span>lb/week on the scale</span></div>
       <div class="stat"><b>${wb.n}/7</b><span>days logged</span></div></div>
+    ${goalWeek(wb)}
     ${proj}
     <div style="margin-top:12px"><h3>Last 7 days</h3>${wb.rows.map(r=>`<div class="wrow"><span>${esc(fmtDate(r.k))}${r.logged?'':' · not logged'}</span><span>${r.b&&r.logged?`${r.b.eaten} eaten · ${r.b.burn} burned · <b style="color:${r.b.deficit>=0?'var(--accent)':'var(--warn)'}">${r.b.deficit>=0?'−':'+'}${Math.abs(r.b.deficit)}</b>${r.b.real?'':' (est.)'}`:'–'}</span></div>`).join('')}</div>
     <div class="note" style="margin-top:8px">${wb.actual!=null?'The scale number needs two or more weeks to be meaningful, since daily weight swings with water and salt. ':''}Days with no food logged are skipped so they do not fake a big deficit.</div></div>
@@ -1168,9 +1196,10 @@ document.addEventListener('submit',e=>{
 document.addEventListener('input',e=>{
   const t=e.target;
   if(t.dataset.f){ const f=t.dataset.f; let v=t.value;
-    if(f==='weight'||f==='active'||f==='burned') v = v===''?null:+v;
+    if(['weight','active','burned','steps','activeMin','distance'].includes(f)) v = v===''?null:+v;
     editDay(S.date,d=>{ d[f]=v; }); renderDock();
     if($('#balres')) refreshBal();
+    if(f==='steps'||f==='activeMin'||f==='active') refreshGoalBars();
   } else if(t.dataset.mf){ editMonth(S.month,m=>{ m[t.dataset.mf]=t.value; });
   } else if(t.dataset.set){ const k=t.dataset.set; SET[k]=t.type==='checkbox'?t.checked:(k==='every'?+t.value:t.value.trim()); saveSet(); if(k==='remind'&&t.checked&&'Notification' in window&&Notification.permission==='default') Notification.requestPermission().then(()=>render());
   } else if(t.dataset.draft){ S.draft[t.dataset.draft]=t.value;
@@ -1246,7 +1275,7 @@ function importData(file){
       const o=JSON.parse(r.result);
       if(o&&o.app==='health-journal-activity'&&o.days&&typeof o.days==='object'){
         let n=0, kept=0;
-        Object.keys(o.days).forEach(k=>{ const a=o.days[k]||{}; editDay(k,d=>{ if(a.steps>0) d.steps=+a.steps; if(a.active>0){ if(d.active===undefined||d.active===null||d.active===''){ d.active=Math.round(+a.active); n++; } else kept++; } }); });
+        Object.keys(o.days).forEach(k=>{ const a=o.days[k]||{}; editDay(k,d=>{ if(a.steps>0) d.steps=+a.steps; if(a.activeMin>0&&(d.activeMin==null||d.activeMin==='')) d.activeMin=+a.activeMin; if(a.distance>0&&(d.distance==null||d.distance==='')) d.distance=+a.distance; if(a.burned>0&&(d.burned==null||d.burned==='')) d.burned=Math.round(+a.burned); if(a.active>0){ if(d.active===undefined||d.active===null||d.active===''){ d.active=Math.round(+a.active); n++; } else kept++; } }); });
         saveLocal(); render(); setSync(`Imported active calories for ${n} day${n===1?'':'s'}${kept?` (kept ${kept} you had already entered)`:''}`); return;
       }
       if(!o||o.app!=='health-journal'||typeof o.days!=='object') throw new Error('bad file');
@@ -1270,6 +1299,11 @@ function vSettings(){
     <label for="s-model" style="margin-top:10px">Model</label>
     <select id="s-model" data-set="model">${[['claude-sonnet-5-5','Sonnet 5.5 (best balance)'],['claude-haiku-5-5','Haiku 5.5 (cheapest)'],['claude-opus-5-5','Opus 5.5 (most capable)']].map(([v,l])=>`<option value="${v}" ${SET.model===v?'selected':''}>${l}</option>`).join('')}</select>
     <div class="note" style="margin-top:8px">Create a key at console.anthropic.com and set a monthly spending limit on it. The key is stored only on this phone and is sent only to Anthropic. Each photo or description estimate typically costs a few cents. Barcode lookups are free and do not use the key.</div></div>
+  <div class="card"><h2>Activity goals</h2>
+    <div class="two"><div><label for="s-sg">Steps per day</label><input id="s-sg" data-pf="stepGoal" type="number" inputmode="numeric" min="0" value="${esc(S.profile.stepGoal??6000)}"></div>
+    <div><label for="s-mg">Active minutes per day</label><input id="s-mg" data-pf="minGoal" type="number" inputmode="numeric" min="0" value="${esc(S.profile.minGoal??90)}"></div></div>
+    <label for="s-cg" style="margin-top:10px">Activity calories per day</label><input id="s-cg" data-pf="calGoal" type="number" inputmode="numeric" min="0" value="${esc(S.profile.calGoal??500)}">
+    <div class="note" style="margin-top:8px">These match your Samsung Health goals. Change them here if you change them there.</div></div>
   <div class="card"><h2>Alcohol limit</h2>
     <label for="s-alc">Most standard drinks per day</label>
     <input id="s-alc" data-pf="alcoholLimit" type="number" inputmode="decimal" min="0" max="6" step="0.5" value="${esc(S.profile.alcoholLimit??1)}">
