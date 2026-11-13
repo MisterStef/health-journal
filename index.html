@@ -260,6 +260,7 @@ const DEFS = [
   {g:'Sugar, sodium & caffeine',k:'addedSugar',l:'Added sugar',u:'g'},
   {g:'Sugar, sodium & caffeine',k:'sodium',l:'Sodium',u:'mg'},
   {g:'Sugar, sodium & caffeine',k:'caffeine',l:'Caffeine',u:'mg'},
+  {g:'Alcohol',k:'alcohol',l:'Alcohol',u:'drinks'},
   {g:'Minerals',k:'calcium',l:'Calcium',u:'mg'},
   {g:'Minerals',k:'iron',l:'Iron',u:'mg'},
   {g:'Minerals',k:'magnesium',l:'Magnesium',u:'mg'},
@@ -386,6 +387,7 @@ function targets(){
   max('addedSugar',25,36);
   max('sodium',1500,2300);
   max('caffeine',400,400);
+  { const al=S.profile.alcoholLimit, lim=(al===undefined||al===null||al==='')?1:Math.max(0,+al||0); max('alcohol',lim,lim===0?0:lim+1); }
   min('calcium',1000); min('iron',8); min('magnesium',420); min('potassium',3400); min('zinc',11);
   min('vitA',900); min('vitC',90); min('vitD',15); min('vitE',15); min('vitK',120); min('b12',2.4);
   min('folate',400); min('b6',1.3); min('thiamin',1.2); min('riboflavin',1.3); min('niacin',16);
@@ -424,7 +426,8 @@ const WATER_RULES = [
   ['Fiber','fiber',8],
   ['Sodium','sodium',0.15],
   ['Caffeine','caffeine',0.5],
-  ['Added sugar','addedSugar',2]
+  ['Added sugar','addedSugar',2],
+  ['Alcohol','alcohol',250]
 ];
 function waterGoal(date){
   const t=dayTotals(day(date)), w=latestWeight(), assumed=!w;
@@ -619,8 +622,9 @@ function addPanel(){
     body=`<form id="foodform" class="row" style="flex-wrap:nowrap">
       <input id="fname" class="grow" placeholder="What did you eat?" autocomplete="off" aria-label="Food name">
       <input id="fcal" type="number" inputmode="numeric" min="0" placeholder="Cal" style="width:90px" aria-label="Calories">
+      <input id="falc" type="number" inputmode="decimal" min="0" step="0.5" placeholder="Drinks" style="width:84px" aria-label="Alcoholic drinks">
       <button class="btn" type="submit">Add</button></form>
-      <div class="note" style="margin-top:6px">Manual entries only count calories. Use photo or label for full nutrients.</div>`;
+      <div class="note" style="margin-top:6px">Manual entries only count calories, plus alcoholic drinks if you enter them. Use photo or label for full nutrients.</div>`;
   }
   return `<div class="row" style="margin-bottom:10px">${modes.map(([k,l])=>`<button class="chip" data-act="mode" data-m="${k}" aria-pressed="${S.addMode===k}">${l}</button>`).join('')}</div>${body}`;
 }
@@ -672,7 +676,7 @@ function vFood(){
 /* ----- nutrients (collapsible, top of Food tab) ----- */
 function nutrSummary(t){
   const T=targets(), isToday=S.date===todayStr();
-  const warn=['sat','trans','addedSugar','sodium','caffeine'].map(k=>[k,statusOf(k,t[k],isToday)]).filter(([k,s])=>s&&(s.s==='near'||s.s==='over')).map(([k,s])=>DEFS.find(d=>d.k===k).l.toLowerCase()+(s.s==='over'?' over':' high'));
+  const warn=['sat','trans','addedSugar','sodium','caffeine','alcohol'].map(k=>[k,statusOf(k,t[k],isToday)]).filter(([k,s])=>s&&(s.s==='near'||s.s==='over')).map(([k,s])=>DEFS.find(d=>d.k===k).l.toLowerCase()+(s.s==='over'?' over':' high'));
   return `Protein ${Math.round(t.protein)}/${T.protein.t} g · Carbs ${Math.round(t.carbs)}/${T.carbs.t} g · Fat ${Math.round(t.fat)}/${T.fat.t} g${warn.length?' · ⚠ '+warn.join(', '):''}`;
 }
 function nutrBody(){
@@ -684,7 +688,7 @@ function nutrBody(){
     const v=t[x.k], T=TT[x.k], st=T?statusOf(x.k,v,isToday):null;
     let bar='';
     if(T){
-      const scale=T.ty==='range'?T.hi:T.ty==='max'?T.cap:T.t, w=Math.min(100,v/scale*100), tick=Math.min(98,T.t/scale*100);
+      const scale=(T.ty==='range'?T.hi:T.ty==='max'?T.cap:T.t)||1, w=Math.min(100,v/scale*100), tick=Math.min(98,T.t/scale*100);
       const cls=!st?'info':st.s==='ok'?'':st.s==='near'?'near':st.s==='wait'?'info':'over';
       bar=`<div class="fill ${cls}" data-anim="n-${x.k}" data-from="0%" style="width:${w.toFixed(1)}%"></div><i class="tick" style="left:${tick}%"></i>`;
     }
@@ -702,13 +706,18 @@ function nutrBody(){
   <div><span class="note">Saturated fat</span><b>≤ ${T.sat.t} g</b><span class="note">under 7% of cal</span></div>
   <div><span class="note">Added sugar</span><b>≤ ${T.addedSugar.t} g</b><span class="note">limit</span></div>
   <div><span class="note">Sodium</span><b>≤ ${T.sodium.t} mg</b><span class="note">hard cap ${T.sodium.cap}</span></div>
-  <div><span class="note">Caffeine</span><b>≤ ${T.caffeine.t} mg</b><span class="note">limit</span></div></div>`; })()+
-  sections.map(g=>`<div style="margin-top:14px"><h3>${g}</h3>${rows(g)}</div>`).join('')+
+  <div><span class="note">Caffeine</span><b>≤ ${T.caffeine.t} mg</b><span class="note">limit</span></div>
+  <div><span class="note">Alcohol</span><b>${T.alcohol.t?`≤ ${T.alcohol.t} drink${T.alcohol.t===1?'':'s'}`:'None'}</b><span class="note">per day, set in Settings</span></div></div>`; })()+
+  sections.map(g=>`<div style="margin-top:14px"><h3>${g}</h3>${rows(g)}${g==='Alcohol'?alcoholWeek():''}</div>`).join('')+
   `<div style="margin-top:14px"><h3>Food variety</h3>
     <div class="row sb" style="margin-bottom:6px"><span><b>${dayGroups.size}</b> of ${FOOD_GROUPS.length} food groups today</span><span><b>${plants.length}</b> / 30 different plants this week</span></div>
     <div class="chips">${FOOD_GROUPS.map(g=>`<span class="chip ${dayGroups.has(g)?'on':''}">${g}</span>`).join('')}</div>
     ${plants.length?`<div class="note" style="margin-top:8px">This week: ${esc(plants.join(', '))}</div>`:'<div class="note" style="margin-top:8px">Plants include vegetables, fruit, whole grains, beans, nuts, seeds, herbs and spices. Eating around 30 different ones a week is a common variety goal for gut health.</div>'}</div>
   <div class="note" style="margin-top:14px">How these were set: protein is 1.6 g per kg of your goal weight (you strength train 1–2 days a week and are in a calorie deficit); fat is about 30% of calories and mostly unsaturated; carbs are the moderate, fiber-rich remainder; fiber is 14 g per 1,000 calories; saturated fat stays under 7% of calories; added sugar under 25 g; sodium under 1,500 mg, the American Heart Association’s ideal limit when blood pressure runs high, with 2,300 mg as the hard cap. Vitamins and minerals use recommended intakes for men 19–50. Because of your family history, blood pressure readings and fatty liver, please have your doctor or a registered dietitian confirm these, including alcohol, which this app does not track. Photo estimates are approximate.</div>`;
+}
+function alcoholWeek(){
+  let tot=0, dry=0; for(let i=0;i<7;i++){ const a=dayTotals(S.days[addDays(S.date,-i)]).alcohol; tot+=a; if(a<=0) dry++; }
+  return `<div class="note" style="margin-top:6px">Last 7 days: <b>${fmtN(tot)}</b> drink${Math.abs(tot-1)<0.05?'':'s'}, ${dry} alcohol-free day${dry===1?'':'s'}. One drink is 12 oz of regular beer, 5 oz of wine or 1.5 oz of liquor (14 g of pure alcohol).</div>`;
 }
 function weekPlants(date){
   const set=new Map();
@@ -739,7 +748,7 @@ function vWater(){
     ${g.assumed?'<div class="tank-c" style="padding-top:0"><div class="warn">Add your weight in the Body tab for an accurate baseline.</div></div>':''}</div>
   <div class="card"><h2>How your goal is calculated</h2>
     ${bd}<div class="wrow"><span><b>Today’s water goal</b></span><span><b>${Math.round(g.oz)} oz</b> (${(g.total/1000).toFixed(1)} L)</span></div>
-    <div class="note" style="margin-top:8px">The goal is recalculated every time you add or remove food. Baseline is 20 mL per kg of body weight; then add 0.15 mL per calorie, 3 mL per g protein, 8 mL per g fiber, 0.15 mL per mg sodium, 0.5 mL per mg caffeine and 2 mL per g added sugar (kept between 1.5 and 5.5 L). This is a practical estimate, not medical advice. Exercise, heat and illness raise your needs, and if you have kidney, heart or other conditions, follow your doctor’s fluid advice instead.</div></div>
+    <div class="note" style="margin-top:8px">The goal is recalculated every time you add or remove food. Baseline is 20 mL per kg of body weight; then add 0.15 mL per calorie, 3 mL per g protein, 8 mL per g fiber, 0.15 mL per mg sodium, 0.5 mL per mg caffeine 2 mL per g added sugar and 250 mL (about 8 oz) per alcoholic drink, since alcohol makes you lose extra water (kept between 1.5 and 5.5 L). The drink itself does not count toward your water. This is a practical estimate, not medical advice. Exercise, heat and illness raise your needs, and if you have kidney, heart or other conditions, follow your doctor’s fluid advice instead.</div></div>
   <div class="card"><h2>Today’s drinks</h2>${(d.water||[]).length?(d.water||[]).slice().reverse().map(w=>`<div class="food"><div class="n">${Math.round(w.ml/OZ*10)/10} oz<small>${new Date(w.t||Date.now()).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</small></div><button class="x" data-act="delwater" data-id="${w.id}" aria-label="Remove">×</button></div>`).join(''):'<div class="empty">Nothing logged yet.</div>'}</div>
   <div class="card"><h2>Reminder window</h2><div class="two"><div><label for="p-wake">I wake up around (hour, 0–23)</label><input id="p-wake" data-pf="wake" type="number" min="0" max="23" value="${esc(S.profile.wake)}"></div><div><label for="p-bed">I go to bed around (hour, 0–23)</label><input id="p-bed" data-pf="bed" type="number" min="1" max="24" value="${esc(S.profile.bed)}"></div></div>
     <div class="note" style="margin-top:8px">The water button at the bottom of the other tabs shows today’s total and adds 8 oz in one tap. Your pace is measured across this window. This page can only nudge you while it is open. For a buzzing reminder, set a repeating alarm on your phone for the times you want to drink.</div></div>`;
@@ -867,7 +876,7 @@ function monthStats(ym){
     water:wDays.length?avg(wDays.map(r=>waterMl(r)/OZ)):null,
     onTarget:tgt?foodDays.filter(r=>dayCals(r)<=tgt*1.05).length:null, tgt,
     avgDef:defs.length?avg(defs):null, plants:plants.size,
-    protDays:cnt('protein'),fibDays:cnt('fiber'),sodDays:cnt('sodium'),sugDays:cnt('addedSugar'),
+    alcTotal:tots.reduce((a,t)=>a+t.alcohol,0),alcFree:tots.filter(t=>t.alcohol<=0).length,protDays:cnt('protein'),fibDays:cnt('fiber'),sodDays:cnt('sodium'),sugDays:cnt('addedSugar'),
     w0:ws[0]||null, w1:ws[ws.length-1]||null};
 }
 function vMonth(){
@@ -883,6 +892,7 @@ function vMonth(){
     <div class="stat"><b>${st.fibDays}/${st.foodDays}</b><span>days fiber hit</span></div>
     <div class="stat"><b>${st.sodDays}/${st.foodDays}</b><span>days sodium within limit</span></div>
     <div class="stat"><b>${st.sugDays}/${st.foodDays}</b><span>days added sugar within limit</span></div>
+    <div class="stat"><b>${r1(st.alcTotal)}</b><span>alcoholic drinks (${st.alcFree}/${st.foodDays} days alcohol-free)</span></div>
     <div class="stat"><b>${r1(st.protein)}</b><span>avg protein (g)</span></div>
     <div class="stat"><b>${r1(st.fiber)}</b><span>avg fiber (g)</span></div>
     <div class="stat"><b>${r1(st.addedSugar)}</b><span>avg added sugar (g)</span></div>
@@ -942,7 +952,7 @@ function makeFood(it,qty,meal,src){
 }
 function pushFood(f){ editDay(S.date,d=>{ d.foods.push(f); }); }
 function addFoodObj(f){ pushFood(Object.assign({},f,{id:uid(),meal:S.foodMeal||mealGuess(),t:Date.now()})); render(); }
-function addManual(name,cal){ pushFood({id:uid(),name,meal:S.foodMeal||mealGuess(),cal:Math.round(+cal||0),n:{},groups:[],plants:[],src:'manual',t:Date.now()}); render(); const f=$('#fname'); if(f) f.focus(); }
+function addManual(name,cal,alc){ pushFood({id:uid(),name,meal:S.foodMeal||mealGuess(),cal:Math.round(+cal||0),n:(+alc>0?{alcohol:r2(+alc)}:{}),groups:[],plants:[],src:'manual',t:Date.now()}); render(); const f=$('#fname'); if(f) f.focus(); }
 function saveProduct(it,barcode){
   const id=barcode||('p-'+slug(it.name));
   const rec={id,name:it.name,serving_desc:it.serving_desc||'',barcode:barcode||'',groups:it.groups||[],plants:it.plants||[],updated:Date.now()};
@@ -976,7 +986,7 @@ async function detectBarcode(blob){
 }
 
 /* ---------- Claude estimation ---------- */
-const SCHEMA = `Return JSON: {"items":[{"name":str,"serving_desc":str,"cal":number,"protein":g,"carbs":g,"fat":g,"sat":g,"trans":g,"mono":g,"poly":g,"omega3":g,"fiber":g,"sugar":g,"addedSugar":g,"sodium":mg,"caffeine":mg,"vitA":mcg RAE,"vitC":mg,"vitD":mcg,"vitE":mg,"vitK":mcg,"b12":mcg,"folate":mcg DFE,"b6":mg,"thiamin":mg,"riboflavin":mg,"niacin":mg,"calcium":mg,"iron":mg,"magnesium":mg,"potassium":mg,"zinc":mg,"groups":[from: ${FOOD_GROUPS.join(', ')}],"plants":[distinct plant foods in it, lowercase singular, e.g. "spinach","oat","almond","cumin"],"notes":str}]}. Use numbers only (0 when negligible, best estimate otherwise; never null). Keep notes under 120 characters (say what you assumed or could not see).`;
+const SCHEMA = `Return JSON: {"items":[{"name":str,"serving_desc":str,"cal":number,"protein":g,"carbs":g,"fat":g,"sat":g,"trans":g,"mono":g,"poly":g,"omega3":g,"fiber":g,"sugar":g,"addedSugar":g,"sodium":mg,"caffeine":mg,"alcohol":standard drinks,"vitA":mcg RAE,"vitC":mg,"vitD":mcg,"vitE":mg,"vitK":mcg,"b12":mcg,"folate":mcg DFE,"b6":mg,"thiamin":mg,"riboflavin":mg,"niacin":mg,"calcium":mg,"iron":mg,"magnesium":mg,"potassium":mg,"zinc":mg,"groups":[from: ${FOOD_GROUPS.join(', ')}],"plants":[distinct plant foods in it, lowercase singular, e.g. "spinach","oat","almond","cumin"],"notes":str}]}. Use numbers only (0 when negligible, best estimate otherwise; never null). For alcoholic drinks, set alcohol as US standard drinks (one drink is 14 g of pure alcohol: 12 oz of 5% beer, 5 oz of 12% wine or 1.5 oz of 40% liquor each equal 1) and keep their real calories. Keep notes under 120 characters (say what you assumed or could not see).`;
 /* Claude API (your own key, called straight from this device) */
 function blobToB64(b){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(b); }); }
 async function claudeText(prompt,blobs,max){
@@ -1036,6 +1046,8 @@ function parseOFF(p){
   let have=0;
   Object.keys(OFFMAP).forEach(k=>{ const [key,f]=OFFMAP[k]; let v=get(key); if(v==null && k==='sodium'){ const s=get('salt'); if(s!=null) v=s*0.4; }
     it[k]=(v!=null&&isFinite(v)&&v>0)?r2(v*f):0; if(v!=null) have++; });
+  const abv=+(n.alcohol_100g!=null&&n.alcohol_100g!==''?n.alcohol_100g:n.alcohol);
+  if(isFinite(abv)&&abv>0&&abv<100){ it.alcohol=r2(abv*0.789*(sq?sq/100:1)/14); have++; }
   it.notes=have<8?'The food database has limited detail for this product, so some vitamins and minerals show as 0.':'From Open Food Facts. Check against the package if something looks off.';
   return it;
 }
@@ -1069,7 +1081,7 @@ function stopScan(){ scanning=false; if(scanStream){ scanStream.getTracks().forE
 async function readLabel(){
   const dr=S.draft; let code=(dr.barcode||'').replace(/\D/g,'');
   if(!code && dr.label){ S.est={busy:true,msg:'Checking the barcode…'}; render(); code=(await detectBarcode(dr.label.blob))||''; if(code) dr.barcode=code; }
-  if(code && S.foods[code]){
+  if(code && S.foods[code] && S.foods[code].alcohol!==undefined){
     const p=S.foods[code]; S.est={items:[Object.assign({},p,{qty:1,save:false,notes:'Saved product'})],src:'barcode',barcode:code}; render(); return;
   }
   if(code){
@@ -1133,7 +1145,7 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('submit',e=>{
   if(e.target.id==='foodform'){ e.preventDefault(); const n=$('#fname').value.trim(), c=+$('#fcal').value;
-    if(!n){ $('#fname').focus(); return; } addManual(n,c||0); }
+    if(!n){ $('#fname').focus(); return; } addManual(n,c||0,+($('#falc')||{}).value||0); }
 });
 document.addEventListener('input',e=>{
   const t=e.target;
@@ -1173,7 +1185,7 @@ function digest(ym){
   L.push(`My goals for the month: ${m.intentions||'(none written)'}`);
   const c=calc();
   L.push(`My target: ${st.tgt?st.tgt+' calories/day':'not set'}${S.profile.pace?`; losing ${S.profile.pace} lb/week`:''}${S.profile.goal?`; goal weight ${S.profile.goal} lb`:''}.`);
-  { const T=targets(); L.push(`My nutrient targets: protein ${T.protein.t} g (${T.protein.lo}-${T.protein.hi}); carbs ${T.carbs.t} g; fat ${T.fat.t} g; fiber at least ${T.fiber.t} g; saturated fat at most ${T.sat.t} g; added sugar at most ${T.addedSugar.t} g; sodium at most ${T.sodium.t} mg. Days on target this month: protein ${st.protDays}/${st.foodDays}, fiber ${st.fibDays}/${st.foodDays}, sodium within limit ${st.sodDays}/${st.foodDays}, added sugar within limit ${st.sugDays}/${st.foodDays}. Context: family history of high blood pressure and diabetes, blood pressure readings above ideal, fatty liver.`); }
+  { const T=targets(); L.push(`My nutrient targets: protein ${T.protein.t} g (${T.protein.lo}-${T.protein.hi}); carbs ${T.carbs.t} g; fat ${T.fat.t} g; fiber at least ${T.fiber.t} g; saturated fat at most ${T.sat.t} g; added sugar at most ${T.addedSugar.t} g; sodium at most ${T.sodium.t} mg. Days on target this month: protein ${st.protDays}/${st.foodDays}, fiber ${st.fibDays}/${st.foodDays}, sodium within limit ${st.sodDays}/${st.foodDays}, added sugar within limit ${st.sugDays}/${st.foodDays}. Alcohol this month: ${r1(st.alcTotal)} standard drinks, ${st.alcFree} of ${st.foodDays} logged days alcohol-free (daily limit ${T.alcohol.t}). Context: family history of high blood pressure and diabetes, blood pressure readings above ideal, fatty liver.`); }
   L.push(`Averages (on days logged): ${st.foodDays} days of food logged; calories ${st.cal??'n/a'}; protein ${r1(st.protein)} g; fiber ${r1(st.fiber)} g; added sugar ${r1(st.addedSugar)} g; sodium ${st.sodium!=null?Math.round(st.sodium):'n/a'} mg; water ${r1(st.water)} oz; average daily calorie deficit ${st.avgDef!=null?Math.round(st.avgDef):'n/a'}; ${st.plants} different plants eaten${st.w0&&st.w1?`; weight ${st.w0.w} to ${st.w1.w} lb`:''}.`);
   L.push('DAILY ENTRIES:');
   st.rows.slice().sort((a,b)=>a.date.localeCompare(b.date)).forEach(r=>{
@@ -1235,6 +1247,10 @@ function vSettings(){
     <label for="s-model" style="margin-top:10px">Model</label>
     <select id="s-model" data-set="model">${[['claude-sonnet-5-5','Sonnet 5.5 (best balance)'],['claude-haiku-5-5','Haiku 5.5 (cheapest)'],['claude-opus-5-5','Opus 5.5 (most capable)']].map(([v,l])=>`<option value="${v}" ${SET.model===v?'selected':''}>${l}</option>`).join('')}</select>
     <div class="note" style="margin-top:8px">Create a key at console.anthropic.com and set a monthly spending limit on it. The key is stored only on this phone and is sent only to Anthropic. Each photo or description estimate typically costs a few cents. Barcode lookups are free and do not use the key.</div></div>
+  <div class="card"><h2>Alcohol limit</h2>
+    <label for="s-alc">Most standard drinks per day</label>
+    <input id="s-alc" data-pf="alcoholLimit" type="number" inputmode="decimal" min="0" max="6" step="0.5" value="${esc(S.profile.alcoholLimit??1)}">
+    <div class="note" style="margin-top:8px">Set this to whatever your doctor recommends. Enter 0 if they advise none; any drink then shows as over. With a fatty liver, many doctors advise little or no alcohol, so it is worth asking them.</div></div>
   <div class="card"><h2>Drink reminders</h2>
     <label style="display:flex;gap:8px;align-items:center;font-size:15px;color:var(--ink)"><input type="checkbox" data-set="remind" ${SET.remind?'checked':''}> Remind me to drink water</label>
     <label for="s-every" style="margin-top:10px">At most once every</label>
