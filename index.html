@@ -243,7 +243,7 @@ body[data-view="water"] .toast{bottom:calc(90px + env(safe-area-inset-bottom))}
 </div>
 <div class="dock" id="dock"></div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-<div class="scanner" id="scanner" hidden><video id="scanvideo" playsinline muted></video><div class="box"></div><div class="bar"><span>Point at the barcode</span><button class="btn" data-act="stopscan">Cancel</button></div></div>
+<div class="scanner" id="scanner" hidden><video id="scanvideo" playsinline muted></video><div class="box"></div><div class="bar"><span>Point at a barcode or QR code</span><button class="btn" data-act="stopscan">Cancel</button></div></div>
 
 <script>
 /* ---------- helpers ---------- */
@@ -646,11 +646,11 @@ function addPanel(){
       <div class="row" style="margin-top:8px">${fileBtns('meal',true)}<button class="btn" data-act="estimate" ${busy?'disabled':''}>Estimate nutrition</button></div>
       <div class="note" style="margin-top:6px">Claude looks at the photo and your description and estimates every nutrient. Mention hidden extras like oil, butter or dressing for a better estimate.</div>`;
   } else if(S.addMode==='label'){
-    body=`<div class="note" style="margin-bottom:8px">Scan the barcode to look the product up. If it is not in the database, photograph the nutrition label and Claude reads it. Products you add are saved, so next time it is one tap.</div>
+    body=`<div class="note" style="margin-bottom:8px">Scan a barcode to look the product up, or a food QR code that carries its own nutrition (name, calories, protein and so on). If it is not in the database, photograph the nutrition label and Claude reads it. Products you add are saved, so next time it is one tap.</div>
       <div class="row"><button class="btn" data-act="scan">Scan barcode</button>${fileBtns('label',false)}</div>
       ${thumbs(dr.label?[dr.label]:[],'label')}
       <div class="two" style="margin-top:10px">
-        <div><label for="d-bar">Barcode number</label><input id="d-bar" data-draft="barcode" inputmode="numeric" value="${esc(dr.barcode)}" placeholder="digits under the barcode"></div>
+        <div><label for="d-bar">Barcode number</label><input id="d-bar" data-draft="barcode" value="${esc(dr.barcode)}" placeholder="digits under the barcode, or paste a food code"></div>
         <div style="align-self:end"><button class="btn" data-act="readlabel" ${busy?'disabled':''}>Look up / read label</button></div>
       </div>`;
   } else {
@@ -670,7 +670,7 @@ function estPanel(){
   if(e.error) return `<div class="card"><div class="warn" style="margin:0">${esc(e.error)}</div><div class="row" style="margin-top:8px"><button class="btn ghost small" data-act="estclear">Dismiss</button></div></div>`;
   if(!e.items||!e.items.length) return '';
   return `<div class="card"><h2>Review and add</h2>
-    <div class="note">${e.src==='barcode'?'Found in your saved products.':e.src==='label'?'Read from the label. Check it looks right.':'These are estimates, so adjust servings if a portion looks off.'} Adding to <b>${esc(S.foodMeal||mealGuess())}</b> on ${esc(fmtDate(S.date))}.</div>
+    <div class="note">${e.src==='qr'?'Read from the code you scanned. Check it looks right.':e.src==='barcode'?'Found in your saved products.':e.src==='label'?'Read from the label. Check it looks right.':'These are estimates, so adjust servings if a portion looks off.'} Adding to <b>${esc(S.foodMeal||mealGuess())}</b> on ${esc(fmtDate(S.date))}.</div>
     ${e.items.map((it,i)=>`<div class="est"><div class="top"><input class="grow" data-ei="${i}" data-ef="name" value="${esc(it.name)}" aria-label="Food name"><label style="margin:0;white-space:nowrap">× <input type="number" step="0.25" min="0.25" data-ei="${i}" data-ef="qty" value="${it.qty}" style="width:70px;display:inline-block" aria-label="Servings"></label></div>
       <div class="macro">${esc(it.serving_desc||'1 serving')} → ${macroLine(scaled(it))}</div>
       ${it.notes?`<div class="note">${esc(it.notes)}</div>`:''}
@@ -1113,7 +1113,7 @@ async function toJpeg(blob,max=1400){
 async function detectBarcode(blob){
   try{
     if(!('BarcodeDetector' in window)) return null;
-    const bd=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128']});
+    const bd=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','qr_code']});
     const bmp=await createImageBitmap(blob); const r=await bd.detect(bmp);
     return r&&r[0]?String(r[0].rawValue):null;
   }catch(e){ return null; }
@@ -1168,6 +1168,51 @@ async function runEstimate(){
   }catch(e){ S.est={error:errMsg(e)}; }
   render();
 }
+
+/* ---------- food QR codes: "Name (serving) | 990 kcal | Protein 47g | Carbs 64g | ..." or JSON ---------- */
+const QRMAP=[
+  [/added\s*sugar/,'addedSugar'],[/sat(urated)?/,'sat'],[/trans/,'trans'],[/mono/,'mono'],[/poly/,'poly'],[/omega/,'omega3'],
+  [/sugar/,'sugar'],[/protein/,'protein'],[/carb/,'carbs'],[/fib(er|re)/,'fiber'],[/sodium|salt/,'sodium'],[/caffeine/,'caffeine'],[/alcohol|drinks?/,'alcohol'],
+  [/potassium/,'potassium'],[/calcium/,'calcium'],[/iron/,'iron'],[/magnesium/,'magnesium'],[/zinc/,'zinc'],
+  [/vit(amin)?\s*a\b/,'vitA'],[/vit(amin)?\s*c\b/,'vitC'],[/vit(amin)?\s*d\b/,'vitD'],[/vit(amin)?\s*e\b/,'vitE'],[/vit(amin)?\s*k\b/,'vitK'],[/b12/,'b12'],[/folate/,'folate'],[/b6/,'b6'],
+  [/fat/,'fat']
+];
+function foodFromQR(text){
+  text=String(text||'').trim(); if(!text) return null;
+  const it={name:'',serving_desc:'1 serving',cal:0,groups:[],plants:[],qty:1,save:true};
+  NKEYS.forEach(k=>{ it[k]=0; });
+  let have=0;
+  if(text[0]==='{'){
+    let o; try{ o=JSON.parse(text); }catch(e){ return null; }
+    const pick=(...ks)=>{ for(const k of ks) if(o[k]!=null&&o[k]!==''&&isFinite(+o[k])) return +o[k]; return null; };
+    const cal=pick('cal','kcal','calories'); if(cal==null) return null;
+    it.name=String(o.name||o.n||'Scanned food'); it.serving_desc=String(o.serving||o.serving_desc||'1 serving'); it.cal=Math.round(cal);
+    NKEYS.forEach(k=>{ const v=pick(k); if(v!=null){ it[k]=r2(v); have++; } });
+    const al=[['carbs','carbohydrates'],['sodium','sodium_mg'],['fat','totalFat']]; al.forEach(([k,a])=>{ const v=pick(a); if(v!=null&&!it[k]){ it[k]=r2(v); have++; } });
+  } else {
+    const segs=text.split(/\s*[|;\n]\s*/).map(s=>s.trim()).filter(Boolean);
+    if(segs.length<2) return null;
+    let name=segs[0], calSeen=false;
+    const pm=name.match(/\(([^)]*)\)\s*$/); if(pm){ it.serving_desc=pm[1].trim()||'1 serving'; name=name.replace(/\s*\([^)]*\)\s*$/,''); }
+    it.name=name||'Scanned food';
+    segs.slice(1).forEach(seg=>{
+      const m=seg.match(/(\d+(?:[.,]\d+)?)\s*(kcal|cal|mg|mcg|µg|ug|g)?\b/i); if(!m) return;
+      let v=parseFloat(m[1].replace(',','.')), unit=(m[2]||'').toLowerCase();
+      const label=seg.replace(m[0],' ').toLowerCase().replace(/[:=]/g,' ').trim();
+      if(unit==='kcal'||(unit==='cal'&&!label)||/^(calories?|energy)$/.test(label)){ if(!calSeen){ it.cal=Math.round(v); calSeen=true; } return; }
+      for(const [re,k] of QRMAP){ if(re.test(label)){
+        if(unit==='g'&&['sodium','potassium','calcium','iron','magnesium','zinc','caffeine','vitC','vitE','b6'].includes(k)) v*=1000;
+        else if(unit==='mg'&&['protein','carbs','fat','sat','trans','fiber','sugar','addedSugar'].includes(k)) v/=1000;
+        else if((unit==='mcg'||unit==='µg'||unit==='ug')&&['sodium','potassium','calcium','iron','magnesium','zinc','caffeine'].includes(k)) v/=1000;
+        it[k]=r2(v); have++; return; } }
+    });
+    if(!calSeen) return null;
+  }
+  if(!isFinite(it.cal)||it.cal<0||it.cal>6000) return null;
+  it.notes=`Read from the code. ${have} nutrient${have===1?'':'s'} came with it; anything the code leaves out shows as 0.`;
+  return it;
+}
+
 /* ---------- Open Food Facts barcode lookup ---------- */
 const OFFMAP={protein:['proteins',1],carbs:['carbohydrates',1],fat:['fat',1],sat:['saturated-fat',1],trans:['trans-fat',1],mono:['monounsaturated-fat',1],poly:['polyunsaturated-fat',1],omega3:['omega-3-fat',1],fiber:['fiber',1],sugar:['sugars',1],addedSugar:['added-sugars',1],sodium:['sodium',1000],caffeine:['caffeine',1000],vitA:['vitamin-a',1e6],vitC:['vitamin-c',1000],vitD:['vitamin-d',1e6],vitE:['vitamin-e',1000],vitK:['vitamin-k',1e6],b12:['vitamin-b12',1e6],folate:['vitamin-b9',1e6],b6:['vitamin-b6',1000],thiamin:['vitamin-b1',1000],riboflavin:['vitamin-b2',1000],niacin:['vitamin-pp',1000],calcium:['calcium',1000],iron:['iron',1000],magnesium:['magnesium',1000],potassium:['potassium',1000],zinc:['zinc',1000]};
 function parseOFF(p){
@@ -1202,7 +1247,7 @@ async function startScan(){
   catch(e){ S.est={error:'Camera access was blocked. Allow the camera for this site in your browser settings, or take a photo instead.'}; render(); return; }
   const v=$('#scanvideo'); v.srcObject=scanStream; try{ await v.play(); }catch(e){}
   $('#scanner').hidden=false; scanning=true;
-  const bd=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128']});
+  const bd=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','qr_code']});
   const loop=async()=>{
     if(!scanning) return;
     try{ const r=await bd.detect(v); if(r&&r[0]){ const code=String(r[0].rawValue); stopScan(); S.draft.barcode=code; try{ navigator.vibrate&&navigator.vibrate(60); }catch(e){} readLabel(); return; } }catch(e){}
@@ -1213,8 +1258,12 @@ async function startScan(){
 function stopScan(){ scanning=false; if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; } const o=$('#scanner'); if(o) o.hidden=true; }
 
 async function readLabel(){
-  const dr=S.draft; let code=(dr.barcode||'').replace(/\D/g,'');
-  if(!code && dr.label){ S.est={busy:true,msg:'Checking the barcode…'}; render(); code=(await detectBarcode(dr.label.blob))||''; if(code) dr.barcode=code; }
+  const dr=S.draft; let raw=String(dr.barcode||'').trim();
+  if(!/^\d+$/.test(raw)){ const q=foodFromQR(raw); if(q){ S.est={items:[q],src:'qr'}; render(); return; } }
+  let code=raw.replace(/\D/g,'');
+  if(!code && dr.label){ S.est={busy:true,msg:'Checking the barcode…'}; render(); const found=(await detectBarcode(dr.label.blob))||'';
+    if(found && !/^\d+$/.test(found)){ const q=foodFromQR(found); if(q){ S.est={items:[q],src:'qr'}; render(); return; } }
+    code=found.replace(/\D/g,''); if(code) dr.barcode=code; }
   if(code && S.foods[code] && S.foods[code].alcohol!==undefined){
     const p=S.foods[code]; S.est={items:[Object.assign({},p,{qty:1,save:false,notes:'Saved product'})],src:'barcode',barcode:code}; render(); return;
   }
