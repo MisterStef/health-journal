@@ -203,7 +203,7 @@ const tOf = d => typeof d.t==='function' ? d.t() : d.t;
 
 /* ---------- state ---------- */
 /* Fixed personal profile (single user). Weight is the starting weight; logged weights take over. */
-const FIXED={sex:'m',age:29,height:71,weight:257,goal:215,goalDate:'2027-05-31',pace:1.5,activity:1.375,custom:''};
+const FIXED={sex:'m',birthday:'1997-01-05',height:71,weight:257,goal:215,goalDate:'2027-05-31',pace:1.5,activity:1.375,custom:''};
 const S = {
   profile:Object.assign({},FIXED,{wake:7,bed:23}), open:{nutr:false,trends:false},
   days:{}, months:{}, foods:{},
@@ -263,11 +263,17 @@ function latestWeight(){
 function proteinTarget(){ const w=latestWeight(); return w ? Math.round(Math.max(50,0.8*w*0.45359237)) : 50; }
 
 /* ---------- calorie / goal math ---------- */
+function ageNow(){
+  const b=parse(S.profile.birthday), n=new Date(); let a=n.getFullYear()-b.getFullYear();
+  if(n.getMonth()<b.getMonth()||(n.getMonth()===b.getMonth()&&n.getDate()<b.getDate())) a--;
+  return a;
+}
 function calc(){
   const p=S.profile, w=latestWeight();
-  if(!(+p.age && +p.height && w)) return null;
+  const age=ageNow();
+  if(!(age && +p.height && w)) return null;
   const kg=w*0.45359237, cm=+p.height*2.54;
-  const bmr=10*kg+6.25*cm-5*(+p.age)+(p.sex==='m'?5:-161);
+  const bmr=10*kg+6.25*cm-5*age+(p.sex==='m'?5:-161);
   const tdee=bmr*(+p.activity||1.375);
   const floor=p.sex==='m'?1500:1200;
   const raw=tdee-(+p.pace||0)*500;
