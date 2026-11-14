@@ -139,6 +139,7 @@ button.chip:active{transform:scale(.95)}
 .fmeta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .fmeta span{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12px}
 .fhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:-4px 0 6px}
+.note a{color:var(--accent);font-weight:600}
 .srow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:transparent;border:0;border-top:1px solid var(--line);padding:10px 2px;color:var(--ink);font:inherit}
 .srow:first-child{border-top:0}
 .srow .n{flex:1;min-width:0;font-weight:500}
@@ -659,7 +660,7 @@ function savedProducts(){ return Object.values(S.foods).sort((a,b)=>(b.updated||
 function macroLine(o){ return `${Math.round(o.cal||0)} cal · P ${r1(o.protein||0)}g · C ${r1(o.carbs||0)}g · F ${r1(o.fat||0)}g`; }
 
 /* ---------- detailed nutrition for one logged food ---------- */
-const SRC_LABEL={receipt:'Receipt photo',barcode:'Barcode scan',qr:'Food QR code',label:'Nutrition label photo',estimate:'Photo or description estimate',manual:'Entered by hand',quick:'Quick add'};
+const SRC_LABEL={opennutrition:'OpenNutrition',receipt:'Receipt photo',barcode:'Barcode scan',qr:'Food QR code',label:'Nutrition label photo',estimate:'Photo or description estimate',manual:'Entered by hand',quick:'Quick add'};
 function foodDetail(f){
   const q=1, v=k=>(k==='cal'?+f.cal:+(f.n||{})[k])||0, TT=targets(), cal=+f.cal||0;
   const P=v('protein'),C=v('carbs'),F=v('fat'), kp=P*4,kc=C*4,kf=F*9, ks=kp+kc+kf||1;
@@ -698,6 +699,7 @@ function foodDetail(f){
       <div class="two"><div><label for="fc-${f.id}">Caffeine (mg)</label><input id="fc-${f.id}" data-fe="caffeine" type="number" inputmode="decimal" min="0" value="${v('caffeine')>0?v('caffeine'):''}" placeholder="0"></div>
       <div><label for="fa-${f.id}">Alcohol (drinks)</label><input id="fa-${f.id}" data-fe="alcohol" type="number" inputmode="decimal" min="0" step="0.5" value="${v('alcohol')>0?v('alcohol'):''}" placeholder="0"></div></div>
       <div class="row" style="margin-top:8px"><button class="btn small" data-act="fesave" data-id="${f.id}">Save changes</button></div></div>
+    ${f.src==='opennutrition'?`<div class="note" style="margin-top:8px">Data: ${ON_ATTR}</div>`:''}
     ${has?'<div class="note" style="margin-top:10px">A dash means the source did not list that nutrient, so it counts as 0. Percentages compare this food with your personal daily targets (for limits like sodium, with the limit).</div>':''}</div>`;
 }
 
@@ -757,7 +759,7 @@ function estPanel(){
   if(e.error) return `<div class="card"><div class="warn" style="margin:0">${esc(e.error)}</div><div class="row" style="margin-top:8px"><button class="btn ghost small" data-act="estclear">Dismiss</button></div></div>`;
   if(!e.items||!e.items.length) return '';
   return `<div class="card"><h2>Review and add</h2>
-    <div class="note">${e.src==='receipt'?'Read from your receipt. Skip anything someone else ate, and check sizes and counts.':e.src==='qr'?'Read from the code you scanned. Check it looks right.':e.src==='barcode'?(e.found?'From Open Food Facts. Check the serving matches what you ate.':'Found in your saved products.'):e.src==='label'?'Read from the label. Check it looks right.':'These are estimates, so adjust servings if a portion looks off.'} Adding to <b>${esc(S.foodMeal||mealGuess())}</b> on ${esc(fmtDate(S.date))}.</div>
+    <div class="note">${e.src==='receipt'?'Read from your receipt. Skip anything someone else ate, and check sizes and counts.':e.src==='qr'?'Read from the code you scanned. Check it looks right.':e.src==='opennutrition'?`From ${ON_ATTR}. Check the serving matches what you ate.`:e.src==='barcode'?(e.found?'From Open Food Facts. Check the serving matches what you ate.':'Found in your saved products.'):e.src==='label'?'Read from the label. Check it looks right.':'These are estimates, so adjust servings if a portion looks off.'} Adding to <b>${esc(S.foodMeal||mealGuess())}</b> on ${esc(fmtDate(S.date))}.</div>
     ${e.items.map((it,i)=>`<div class="est"><div class="top"><input class="grow" data-ei="${i}" data-ef="name" value="${esc(it.name)}" aria-label="Food name"><label style="margin:0;white-space:nowrap">× <input type="number" step="0.25" min="0.25" data-ei="${i}" data-ef="qty" value="${it.qty}" style="width:70px;display:inline-block" aria-label="Servings"></label></div>
       <div class="macro">${esc(it.serving_desc||'1 serving')} → ${macroLine(scaled(it))}</div>
       ${it.notes?`<div class="note">${esc(it.notes)}</div>`:''}
@@ -1356,6 +1358,60 @@ async function offLookup(code){
   return parseOFF(j.product);
 }
 
+
+/* ---------- OpenNutrition: built-in food list (everyday, prepared, restaurant) and barcode files ---------- */
+const ON_ATTR='<a href="https://www.opennutrition.app" target="_blank" rel="noopener">OpenNutrition</a>';
+let ON=null, ONload=null, ONidx=null;
+function loadON(){
+  if(ON) return Promise.resolve(ON);
+  if(!ONload) ONload=fetch('data/opennutrition/foods.json').then(r=>{ if(!r.ok) throw new Error('food list missing'); return r.json(); }).then(j=>{
+    const keys=j.meta.keys;
+    ON={keys,foods:j.foods.map(f=>({name:f[0],alt:f[1],serving:f[2],type:f[3],vals:f.slice(4),hay:(f[0]+' '+f[1]).toLowerCase(),nm:f[0].toLowerCase()}))};
+    return ON; }).catch(e=>{ ONload=null; throw e; });
+  return ONload;
+}
+function onItem(keys,vals,name,serving,src){
+  const it={name,serving_desc:serving,groups:[],plants:[],qty:1,save:true,cal:0};
+  NKEYS.forEach(k=>{ it[k]=0; });
+  keys.forEach((k,i)=>{ it[k]=+vals[i]||0; });
+  it.cal=Math.round(it.cal);
+  it.notes=src==='restaurant'?'Restaurant’s published nutrition, via OpenNutrition. Pick the size you ordered if there are several.':'From OpenNutrition. Adjust servings if your portion was bigger or smaller.';
+  return it;
+}
+function onSearch(q){
+  const toks=q.toLowerCase().replace(/[^a-z0-9'&\s]/g,' ').split(/\s+/).filter(t=>t.length>0);
+  if(!toks.length) return [];
+  const out=[];
+  for(const f of ON.foods){
+    let s=0, okAll=true;
+    for(const t of toks){
+      const i=f.nm.indexOf(t);
+      if(i>=0){ s+= (i===0||/[\s,(\-']/.test(f.nm[i-1]))?4:2; }
+      else if(f.hay.indexOf(t)>=0){ s+=1; }
+      else { okAll=false; break; }
+    }
+    if(!okAll) continue;
+    if(f.nm.startsWith(toks.join(' '))) s+=3;
+    if(f.type===0) s+=1;
+    s-=f.nm.length/60;
+    out.push([s,f]);
+  }
+  out.sort((a,b)=>b[0]-a[0]);
+  return out.slice(0,25).map(([,f])=>{ const it=onItem(ON.keys,f.vals,f.name,f.serving,f.type===2?'restaurant':'generic'); it.kind=['Common food','Prepared dish','Restaurant'][f.type]; return it; });
+}
+async function onBarcode(code){
+  code=String(code).replace(/\D/g,''); if(code.length<8) return null; code=code.padStart(13,'0');
+  if(!ONidx){ const r=await fetch('data/opennutrition/barcodes/index.json'); if(!r.ok) return null; ONidx=await r.json(); }
+  let pre=null; for(let L=9;L>=4;L--){ const p=code.slice(0,L); if(ONidx.includes(p)){ pre=p; break; } }
+  if(!pre) return null;
+  const r=await fetch('data/opennutrition/barcodes/'+pre+'.json'); if(!r.ok) return null;
+  const rows=await r.json(), row=rows.find(x=>x[0]===code); if(!row) return null;
+  if(!ON) { try{ await loadON(); }catch(e){} }
+  const keys=(ON&&ON.keys)||['cal','protein','carbs','fat','fiber','sat','trans','mono','poly','omega3','sugar','addedSugar','sodium','caffeine','alcohol','calcium','iron','magnesium','potassium','zinc','vitA','vitC','vitD','vitE','vitK','b12','folate','b6','thiamin','riboflavin','niacin'];
+  const it=onItem(keys,row.slice(3),row[1],row[2],'grocery'); it.notes='From OpenNutrition. Check against the package if something looks off.';
+  return it;
+}
+
 /* search Open Food Facts by name; US products first, then worldwide */
 const OFF_FIELDS='code,product_name,brands,serving_size,serving_quantity,nutriments,categories_tags';
 async function offSearch(q){
@@ -1366,21 +1422,36 @@ async function offSearch(q){
   ps.forEach(p=>{ const it=parseOFF(p); if(!it||!p.product_name) return; const key=(p.code||it.name).toLowerCase(); if(seen.has(key)) return; seen.add(key); it.code=p.code||''; out.push(it); });
   return out.slice(0,12);
 }
-async function runSearch(){
+async function runSearch(withOFF){
   const q=String(S.draft.q||'').trim();
   if(q.length<2){ S.srch={error:'Type at least 2 letters of a food or brand.'}; render(); return; }
-  S.srch={busy:true,q}; render();
-  try{ const res=await offSearch(q); S.srch={q,res}; }
-  catch(e){ S.srch={q,error:e&&e.busy?'The food database limits how many searches it takes per minute. Wait a minute and search again; barcode scans still work meanwhile.':navigator.onLine===false?'You are offline. Search needs a connection; your saved products in Quick add still work.':'The food database did not answer. Try again in a moment.'}; }
-  render();
+  const prev=(S.srch&&S.srch.q===q)?S.srch:null;
+  S.srch={q,busy:true,local:prev?prev.local:null,off:prev?prev.off:null}; render();
+  let local=S.srch.local;
+  if(!local){ try{ await loadON(); local=onSearch(q); }catch(e){ local=[]; S.srch.localErr=true; } }
+  S.srch.local=local;
+  if(withOFF||local.length<3){
+    S.srch.offBusy=true; S.srch.busy=false; render();
+    try{ S.srch.off=await offSearch(q); }
+    catch(e){ S.srch.offErr=e&&e.busy?'Open Food Facts limits searches to about 10 a minute. Wait a minute and try again.':navigator.onLine===false?'You are offline, so packaged products can’t be searched. The common and restaurant foods above work offline.':'Open Food Facts did not answer. Try again in a moment.'; }
+    S.srch.offBusy=false;
+  }
+  S.srch.busy=false; render();
 }
 function searchResults(){
   const s=S.srch; if(!s) return '';
-  if(s.busy) return `<div class="note" style="margin-top:10px"><span class="spin"></span>Searching Open Food Facts…</div>`;
   if(s.error) return `<div class="warn">${esc(s.error)}</div>`;
-  if(!s.res.length) return `<div class="note" style="margin-top:10px">No products found for “${esc(s.q)}”. Try the brand plus the product (for example “chobani vanilla”), scan the barcode, or use Photo / describe.</div>`;
-  return `<div style="margin-top:10px">${s.res.map((it,i)=>`<button class="srow" data-act="pickoff" data-i="${i}"><span class="n">${esc(it.name)}<small>${esc(it.serving_desc)} · P ${Math.round(it.protein)}g · C ${Math.round(it.carbs)}g · F ${Math.round(it.fat)}g</small></span><b>${it.cal}</b></button>`).join('')}
-    <div class="note" style="margin-top:6px">From Open Food Facts, a free database anyone can edit. Tap one to review it before adding.</div></div>`;
+  if(s.busy&&!s.local) return `<div class="note" style="margin-top:10px"><span class="spin"></span>Searching…</div>`;
+  const row=(it,i,src)=>`<button class="srow" data-act="pickoff" data-src="${src}" data-i="${i}"><span class="n">${esc(it.name)}<small>${it.kind?esc(it.kind)+' · ':''}${esc(it.serving_desc)} · P ${Math.round(it.protein)}g · C ${Math.round(it.carbs)}g · F ${Math.round(it.fat)}g</small></span><b>${it.cal}</b></button>`;
+  let html='';
+  if(s.local&&s.local.length) html+=`<h3 style="margin-top:12px">Common and restaurant foods</h3>${s.local.map((it,i)=>row(it,i,'on')).join('')}<div class="note" style="margin-top:4px">Data: ${ON_ATTR}</div>`;
+  else if(s.local) html+=`<div class="note" style="margin-top:10px">${s.localErr?'The built-in food list could not load.':'No common or restaurant foods matched “'+esc(s.q)+'”.'}</div>`;
+  if(s.offBusy) html+=`<div class="note" style="margin-top:12px"><span class="spin"></span>Searching packaged products on Open Food Facts…</div>`;
+  else if(s.off){ html+=`<h3 style="margin-top:14px">Packaged products</h3>${s.off.length?s.off.map((it,i)=>row(it,i,'off')).join(''):'<div class="note">No packaged products found. Try the brand plus the product name.</div>'}<div class="note" style="margin-top:4px">Data: <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> contributors</div>`; }
+  else if(s.offErr) html+=`<div class="warn">${esc(s.offErr)}</div>`;
+  else html+=`<div class="row" style="margin-top:12px"><button class="btn ghost small" data-act="offmore">Search packaged products too</button></div>`;
+  if(s.offErr&&!s.offBusy&&!s.off) html+='';
+  return `<div style="margin-top:4px">${html}</div>`;
 }
 
 /* ---------- live barcode scanner ---------- */
@@ -1414,8 +1485,14 @@ async function readLabel(){
   if(code){
     S.est={busy:true,msg:'Looking up barcode '+code+'…'}; render();
     try{
-      const it=await offLookup(code);
-      if(it){ S.est={items:[it],src:'barcode',barcode:code}; render(); return; }
+      let it=null, offFail=false;
+      try{ it=await offLookup(code); }catch(e){ offFail=true; }
+      let alt=null; try{ alt=await onBarcode(code); }catch(e){}
+      if(it&&alt){ const filled=[]; NKEYS.forEach(k=>{ if(!(it[k]>0)&&alt[k]>0&&k!=='cal'){ it[k]=alt[k]; filled.push(k); } });
+        if(filled.length){ if(filled.includes('caffeine')) it.needs=null; it.notes=(it.needs==='caffeine'?'':'')+`Open Food Facts, with ${filled.length} missing nutrient${filled.length===1?'':'s'} filled from OpenNutrition. `+it.notes.replace(/^The food database does not list caffeine[^.]*\.[^.]*\. /,''); } }
+      if(!it&&alt) it=Object.assign(alt,{fromON:true});
+      if(it){ S.est={items:[it],src:it.fromON?'opennutrition':'barcode',barcode:code}; render(); return; }
+      if(offFail&&!dr.label){ S.est={error:'Could not reach the food database. Check your connection and try again.'}; render(); return; }
     }catch(e){
       if(!dr.label){ S.est={error:'Could not reach the food database. Check your connection and try again.'}; render(); return; }
     }
@@ -1457,7 +1534,8 @@ document.addEventListener('click',e=>{
     case 'foodall': { const fs=(day(S.date).foods||[]), all=fs.every(f=>S.openFood[f.id]); fs.forEach(f=>{ S.openFood[f.id]=!all; }); render(); break; }
     case 'delfood': editDay(S.date,d=>{ d.foods=d.foods.filter(f=>f.id!==t.dataset.id); }); render(); break;
     case 'estimate': runEstimate(); break;
-    case 'pickoff': { const it=S.srch&&S.srch.res[+t.dataset.i]; if(it){ S.est={items:[Object.assign({},it,{qty:1,save:true})],src:'barcode',barcode:it.code||''}; S.est.found=true; render(); const e=document.querySelector('.est'); if(e) e.scrollIntoView({behavior:'smooth',block:'center'}); } break; }
+    case 'offmore': runSearch(true); break;
+    case 'pickoff': { const list=S.srch&&(t.dataset.src==='on'?S.srch.local:S.srch.off); const it=list&&list[+t.dataset.i]; if(it){ const on=t.dataset.src==='on'; S.est={items:[Object.assign({},it,{qty:1,save:true})],src:on?'opennutrition':'barcode',barcode:on?'':(it.code||'')}; S.est.found=true; render(); const e=document.querySelector('.est'); if(e) e.scrollIntoView({behavior:'smooth',block:'center'}); } break; }
     case 'receipt': runReceipt(); break;
     case 'estskip': if(S.est&&S.est.items){ S.est.items.splice(+t.dataset.i,1); if(!S.est.items.length) S.est=null; render(); } break;
     case 'readlabel': readLabel(); break;
@@ -1483,7 +1561,7 @@ document.addEventListener('click',e=>{
     case 'notifperm': if('Notification' in window){ Notification.requestPermission().then(()=>render()); } break;
   }
 });
-document.addEventListener('submit',e=>{ if(e.target.id==='offform'){ e.preventDefault(); e.stopImmediatePropagation(); const i=$('#d-q'); if(i) S.draft.q=i.value; runSearch(); } },true);
+document.addEventListener('submit',e=>{ if(e.target.id==='offform'){ e.preventDefault(); e.stopImmediatePropagation(); const i=$('#d-q'); if(i) S.draft.q=i.value; runSearch(false); } },true);
 document.addEventListener('submit',e=>{
   if(e.target.id==='foodform'){ e.preventDefault(); const n=$('#fname').value.trim(), c=+$('#fcal').value;
     if(!n){ $('#fname').focus(); return; } addManual(n,c||0,+($('#falc')||{}).value||0); }
@@ -1597,6 +1675,7 @@ function vSettings(){
     <label for="s-model" style="margin-top:10px">Model</label>
     <select id="s-model" data-set="model">${[['claude-sonnet-5-5','Sonnet 5.5 (best balance)'],['claude-haiku-5-5','Haiku 5.5 (cheapest)'],['claude-opus-5-5','Opus 5.5 (most capable)']].map(([v,l])=>`<option value="${v}" ${SET.model===v?'selected':''}>${l}</option>`).join('')}</select>
     <div class="note" style="margin-top:8px">Create a key at console.anthropic.com and set a monthly spending limit on it. The key is stored only on this phone and is sent only to Anthropic. Each photo or description estimate typically costs a few cents. Barcode lookups are free and do not use the key.</div></div>
+  <div class="card"><h2>Food data sources</h2><div class="note">Common, prepared and restaurant foods, and some barcodes, come from ${ON_ATTR} (Open Database License), which includes data © Open Food Facts contributors. Packaged product search and most barcode scans use <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> (Open Database License).</div></div>
   <div class="card"><h2>Activity goals</h2>
     <div class="two"><div><label for="s-sg">Steps per day</label><input id="s-sg" data-pf="stepGoal" type="number" inputmode="numeric" min="0" value="${esc(S.profile.stepGoal??6000)}"></div>
     <div><label for="s-mg">Active minutes per day</label><input id="s-mg" data-pf="minGoal" type="number" inputmode="numeric" min="0" value="${esc(S.profile.minGoal??90)}"></div></div>
