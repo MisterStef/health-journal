@@ -339,7 +339,7 @@ const S = {
   days:{}, months:{}, foods:{},
   date:todayStr(), tab:'food', month:todayStr().slice(0,7), range:30, metric:'protein',
   foodMeal:null, loaded:false, ai:{busy:false},
-  addMode:'describe', draft:{text:'',files:[],label:null,barcode:''}, est:null
+  addMode:'describe', draft:{text:'',files:[],label:null,barcode:'',rcpt:[]}, est:null
 };
 
 /* ---------- persistence: on this device (localStorage) ---------- */
@@ -653,7 +653,7 @@ function savedProducts(){ return Object.values(S.foods).sort((a,b)=>(b.updated||
 function macroLine(o){ return `${Math.round(o.cal||0)} cal · P ${r1(o.protein||0)}g · C ${r1(o.carbs||0)}g · F ${r1(o.fat||0)}g`; }
 
 /* ---------- detailed nutrition for one logged food ---------- */
-const SRC_LABEL={barcode:'Barcode scan',qr:'Food QR code',label:'Nutrition label photo',estimate:'Photo or description estimate',manual:'Entered by hand',quick:'Quick add'};
+const SRC_LABEL={receipt:'Receipt photo',barcode:'Barcode scan',qr:'Food QR code',label:'Nutrition label photo',estimate:'Photo or description estimate',manual:'Entered by hand',quick:'Quick add'};
 function foodDetail(f){
   const q=1, v=k=>(k==='cal'?+f.cal:+(f.n||{})[k])||0, TT=targets(), cal=+f.cal||0;
   const P=v('protein'),C=v('carbs'),F=v('fat'), kp=P*4,kc=C*4,kf=F*9, ks=kp+kc+kf||1;
@@ -707,7 +707,7 @@ function fileBtns(kind,multi){
 
 function addPanel(){
   const dr=S.draft, busy=S.est&&S.est.busy;
-  const modes=[['describe','Photo / describe'],['label','Barcode / label'],['manual','Manual']];
+  const modes=[['describe','Photo / describe'],['label','Barcode / label'],['receipt','Receipt'],['manual','Manual']];
   let body='';
   if(S.addMode==='describe'){
     body=`<label for="d-text">Describe what you ate (and add a photo if you like)</label>
@@ -715,6 +715,14 @@ function addPanel(){
       ${thumbs(dr.files,'meal')}
       <div class="row" style="margin-top:8px">${fileBtns('meal',true)}<button class="btn" data-act="estimate" ${busy?'disabled':''}>Estimate nutrition</button></div>
       <div class="note" style="margin-top:6px">Claude looks at the photo and your description and estimates every nutrient. Mention hidden extras like oil, butter or dressing for a better estimate.</div>`;
+  } else if(S.addMode==='receipt'){
+    body=`<div class="note" style="margin-bottom:8px">Photograph a fast food or restaurant receipt. Claude reads each item, splits combos into their parts (burger, fries, drink) and uses the restaurant’s published nutrition where it knows it. You review the list and skip anything you did not eat.</div>
+      ${thumbs(dr.rcpt,'receipt')}
+      <div class="row">${fileBtns('receipt',true)}</div>
+      <label for="d-rnote" style="margin-top:10px">Anything the receipt doesn’t show (optional)</label>
+      <input id="d-rnote" data-draft="rnote" value="${esc(dr.rnote||'')}" placeholder="e.g. Diet Coke, no mayo, I only ate half the fries">
+      <div class="row" style="margin-top:10px"><button class="btn" data-act="receipt" ${busy||!dr.rcpt.length?'disabled':''}>Read receipt</button></div>
+      <div class="note" style="margin-top:6px">Long receipt? Add up to 3 photos. Restaurant numbers are close but not exact, and fountain drinks are assumed regular (not diet) unless the receipt or your note says otherwise.</div>`;
   } else if(S.addMode==='label'){
     body=`<div class="note" style="margin-bottom:8px">Scan a barcode to look the product up, or a food QR code that carries its own nutrition (name, calories, protein and so on). If it is not in the database, photograph the nutrition label and Claude reads it. Products you add are saved, so next time it is one tap.</div>
       <div class="row"><button class="btn" data-act="scan">Scan barcode</button>${fileBtns('label',false)}</div>
@@ -740,13 +748,13 @@ function estPanel(){
   if(e.error) return `<div class="card"><div class="warn" style="margin:0">${esc(e.error)}</div><div class="row" style="margin-top:8px"><button class="btn ghost small" data-act="estclear">Dismiss</button></div></div>`;
   if(!e.items||!e.items.length) return '';
   return `<div class="card"><h2>Review and add</h2>
-    <div class="note">${e.src==='qr'?'Read from the code you scanned. Check it looks right.':e.src==='barcode'?'Found in your saved products.':e.src==='label'?'Read from the label. Check it looks right.':'These are estimates, so adjust servings if a portion looks off.'} Adding to <b>${esc(S.foodMeal||mealGuess())}</b> on ${esc(fmtDate(S.date))}.</div>
+    <div class="note">${e.src==='receipt'?'Read from your receipt. Skip anything someone else ate, and check sizes and counts.':e.src==='qr'?'Read from the code you scanned. Check it looks right.':e.src==='barcode'?'Found in your saved products.':e.src==='label'?'Read from the label. Check it looks right.':'These are estimates, so adjust servings if a portion looks off.'} Adding to <b>${esc(S.foodMeal||mealGuess())}</b> on ${esc(fmtDate(S.date))}.</div>
     ${e.items.map((it,i)=>`<div class="est"><div class="top"><input class="grow" data-ei="${i}" data-ef="name" value="${esc(it.name)}" aria-label="Food name"><label style="margin:0;white-space:nowrap">× <input type="number" step="0.25" min="0.25" data-ei="${i}" data-ef="qty" value="${it.qty}" style="width:70px;display:inline-block" aria-label="Servings"></label></div>
       <div class="macro">${esc(it.serving_desc||'1 serving')} → ${macroLine(scaled(it))}</div>
       ${it.notes?`<div class="note">${esc(it.notes)}</div>`:''}
-      <div class="two" style="margin-top:8px"><div><label for="ec-${i}">Caffeine (mg per serving)</label><input id="ec-${i}" type="number" inputmode="decimal" min="0" data-ei="${i}" data-ef="caffeine" value="${it.caffeine>0?it.caffeine:''}" placeholder="0" ${it.needs==='caffeine'?'style="border-color:var(--amber)"':''}></div>
-      <div><label for="ea-${i}">Alcohol (drinks per serving)</label><input id="ea-${i}" type="number" inputmode="decimal" min="0" step="0.5" data-ei="${i}" data-ef="alcohol" value="${it.alcohol>0?it.alcohol:''}" placeholder="0"></div></div>
-      <div class="row sb" style="margin-top:8px"><label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" data-ei="${i}" data-ef="save" ${it.save?'checked':''}> Save to my products</label><button class="btn small" data-act="estadd" data-i="${i}">Add</button></div></div>`).join('')}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><div><label for="ec-${i}" style="font-size:12px">Caffeine (mg each)</label><input id="ec-${i}" type="number" inputmode="decimal" min="0" data-ei="${i}" data-ef="caffeine" value="${it.caffeine>0?it.caffeine:''}" placeholder="0" ${it.needs==='caffeine'?'style="border-color:var(--amber)"':''}></div>
+      <div><label for="ea-${i}" style="font-size:12px">Alcohol (drinks each)</label><input id="ea-${i}" type="number" inputmode="decimal" min="0" step="0.5" data-ei="${i}" data-ef="alcohol" value="${it.alcohol>0?it.alcohol:''}" placeholder="0"></div></div>
+      <div class="row sb" style="margin-top:8px"><label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" data-ei="${i}" data-ef="save" ${it.save?'checked':''}> Save to my products</label><span class="row" style="gap:6px">${e.items.length>1?`<button class="btn ghost small" data-act="estskip" data-i="${i}">Skip</button>`:''}<button class="btn small" data-act="estadd" data-i="${i}">Add</button></span></div></div>`).join('')}
     <div class="row" style="margin-top:10px"><button class="btn" data-act="estaddall">Add all (${e.items.length})</button><button class="btn ghost" data-act="estclear">Discard</button></div></div>`;
 }
 function scaled(it){ const q=+it.qty||1, o={}; NKEYS.forEach(k=>o[k]=(+it[k]||0)*q); return o; }
@@ -1170,7 +1178,7 @@ function addEstItem(i){
   const nf=makeFood(it,it.qty,S.foodMeal||mealGuess(),S.est.src||'estimate'); if(it.save) nf.pid=S.est.barcode||('p-'+slug(it.name));
   pushFood(nf);
   if(it.save) saveProduct(it,S.est.barcode||'');
-  S.est.items.splice(i,1); if(!S.est.items.length){ S.est=null; S.draft.text=''; clearFiles(); S.draft.barcode=''; }
+  S.est.items.splice(i,1); if(!S.est.items.length){ S.est=null; S.draft.text=''; clearFiles(); S.draft.barcode=''; S.draft.rcpt.forEach(f=>{try{URL.revokeObjectURL(f.url)}catch(e){}}); S.draft.rcpt=[]; S.draft.rnote=''; }
   render();
 }
 
@@ -1217,9 +1225,9 @@ async function claudeJson(prompt,blobs){
   const m=t.match(/\{[\s\S]*\}/); if(!m) throw {message:'I could not read the answer. Please try again.'};
   try{ return JSON.parse(m[0]); }catch(e){ throw {message:'I could not read the answer. Please try again.'}; }
 }
-function cleanItems(res){
+function cleanItems(res,max){
   const arr=(res&&res.items)||[]; const out=[];
-  arr.slice(0,12).forEach(x=>{ if(!x||typeof x!=='object') return; const it={name:String(x.name||'Food'),serving_desc:String(x.serving_desc||''),notes:String(x.notes||''),groups:Array.isArray(x.groups)?x.groups:[],plants:Array.isArray(x.plants)?x.plants.map(String):[],qty:1,save:false};
+  arr.slice(0,max||12).forEach(x=>{ if(!x||typeof x!=='object') return; const q=+x.qty; const it={name:String(x.name||'Food'),serving_desc:String(x.serving_desc||''),notes:String(x.notes||''),groups:Array.isArray(x.groups)?x.groups:[],plants:Array.isArray(x.plants)?x.plants.map(String):[],qty:isFinite(q)&&q>0?Math.min(20,Math.round(q*4)/4):1,save:false};
     NKEYS.forEach(k=>{ const v=+x[k]; it[k]=isFinite(v)&&v>0?v:0; }); out.push(it); });
   return out;
 }
@@ -1228,6 +1236,30 @@ function errMsg(e){
   if(e&&e.code==='not_granted') return 'Claude estimates are not available in this view.';
   if(e&&e.code==='rate_limited') return 'Too many requests right now. Wait a minute and try again.';
   return (e&&e.message)||'Something went wrong while reading that. Please try again.';
+}
+async function runReceipt(){
+  const dr=S.draft;
+  if(!dr.rcpt.length){ S.est={error:'Take or choose a photo of the receipt first.'}; render(); return; }
+  S.est={busy:true,msg:'Claude is reading your receipt…'}; render();
+  try{
+    const prompt=`You are reading a photo of a restaurant or fast food receipt to log what the customer ate. Rules:
+1. Find the restaurant name. Prefix each item name with it, e.g. "McDonald's Big Mac".
+2. List every food and drink line. Skip tax, tip, totals, bags, discounts, payment and loyalty lines.
+3. Split combo or meal deals into their parts (sandwich, side, drink) with the size shown (small, medium, large). If a combo size is not printed, assume medium.
+4. Apply modifiers printed under an item (no mayo, add bacon, extra cheese, sauces) to its nutrition and mention them in notes.
+5. Give nutrition for ONE unit of the item and put the count from the receipt in "qty" (e.g. 2 x cheeseburger is qty 2).
+6. Use the restaurant's published nutrition information when you know it; otherwise estimate from a typical version and say so in notes.
+7. Fountain drinks are regular (not diet or zero sugar) unless the receipt or the customer note says otherwise. Set caffeine for coffee, tea, sodas and energy drinks, and alcohol (US standard drinks) for beer, wine and cocktails.
+8. If the photo is not a receipt or nothing is readable, return {"items":[]}.
+Customer note: ${(dr.rnote||'').trim()||'(none)'}
+
+${SCHEMA}
+Each item may also have "qty": number.`;
+    const res=await callClaude(prompt,dr.rcpt.map(f=>f.blob));
+    const items=cleanItems(res,20);
+    S.est=items.length?{items,src:'receipt'}:{error:'I could not read any food items on that receipt. Try a flatter, well-lit photo with the whole receipt in frame.'};
+  }catch(e){ S.est={error:errMsg(e)}; }
+  render();
 }
 async function runEstimate(){
   const dr=S.draft, text=dr.text.trim();
@@ -1389,11 +1421,13 @@ document.addEventListener('click',e=>{
     case 'foodall': { const fs=(day(S.date).foods||[]), all=fs.every(f=>S.openFood[f.id]); fs.forEach(f=>{ S.openFood[f.id]=!all; }); render(); break; }
     case 'delfood': editDay(S.date,d=>{ d.foods=d.foods.filter(f=>f.id!==t.dataset.id); }); render(); break;
     case 'estimate': runEstimate(); break;
+    case 'receipt': runReceipt(); break;
+    case 'estskip': if(S.est&&S.est.items){ S.est.items.splice(+t.dataset.i,1); if(!S.est.items.length) S.est=null; render(); } break;
     case 'readlabel': readLabel(); break;
     case 'estadd': addEstItem(+t.dataset.i); break;
     case 'estaddall': { while(S.est&&S.est.items&&S.est.items.length) addEstItem(0); break; }
     case 'estclear': S.est=null; render(); break;
-    case 'rmphoto': { const kind=t.dataset.kind; if(kind==='label'){ if(S.draft.label){try{URL.revokeObjectURL(S.draft.label.url)}catch(e){}} S.draft.label=null; } else { const f=S.draft.files.splice(+t.dataset.i,1)[0]; if(f){try{URL.revokeObjectURL(f.url)}catch(e){}} } render(); break; }
+    case 'rmphoto': { const kind=t.dataset.kind; if(kind==='receipt'){ const f=S.draft.rcpt.splice(+t.dataset.i,1)[0]; if(f){try{URL.revokeObjectURL(f.url)}catch(e){}} render(); break; } if(kind==='label'){ if(S.draft.label){try{URL.revokeObjectURL(S.draft.label.url)}catch(e){}} S.draft.label=null; } else { const f=S.draft.files.splice(+t.dataset.i,1)[0]; if(f){try{URL.revokeObjectURL(f.url)}catch(e){}} } render(); break; }
     case 'water': addWater(+t.dataset.oz); break;
     case 'watercustom': { const v=+($('#w-custom')||{}).value; if(v>0) addWater(Math.round(v*10)/10); break; }
     case 'delwater': editDay(S.date,d=>{ d.water=d.water.filter(w=>w.id!==t.dataset.id); }); render(); toast('Drink removed'); break;
@@ -1444,6 +1478,7 @@ document.addEventListener('change',async e=>{
     const files=[...t.files||[]].filter(f=>f.type.startsWith('image/')); t.value='';
     if(!files.length) return;
     if(t.dataset.file==='label'){ if(S.draft.label){try{URL.revokeObjectURL(S.draft.label.url)}catch(e){}} const f=files[0]; S.draft.label={blob:f,url:URL.createObjectURL(f)}; const code=await detectBarcode(f); if(code) S.draft.barcode=code; }
+    else if(t.dataset.file==='receipt') files.slice(0,3-S.draft.rcpt.length).forEach(f=>S.draft.rcpt.push({blob:f,url:URL.createObjectURL(f)}));
     else files.slice(0,3-S.draft.files.length).forEach(f=>S.draft.files.push({blob:f,url:URL.createObjectURL(f)}));
     render();
   }
