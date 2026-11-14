@@ -139,6 +139,12 @@ button.chip:active{transform:scale(.95)}
 .fmeta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .fmeta span{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12px}
 .fhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:-4px 0 6px}
+.srow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:transparent;border:0;border-top:1px solid var(--line);padding:10px 2px;color:var(--ink);font:inherit}
+.srow:first-child{border-top:0}
+.srow .n{flex:1;min-width:0;font-weight:500}
+.srow .n small{display:block;color:var(--mute);font-size:12px;font-weight:400;margin-top:1px}
+.srow b{font:600 15px var(--display);font-variant-numeric:tabular-nums}
+.srow:active{background:var(--tile)}
 .stat span{font-size:12px;color:var(--mute);line-height:1.3;display:block;margin-top:3px}
 .empty{color:var(--mute);font-size:14px;padding:8px 0}
 .note{font-size:13px;color:var(--mute);line-height:1.5}
@@ -339,7 +345,7 @@ const S = {
   days:{}, months:{}, foods:{},
   date:todayStr(), tab:'food', month:todayStr().slice(0,7), range:30, metric:'protein',
   foodMeal:null, loaded:false, ai:{busy:false},
-  addMode:'describe', draft:{text:'',files:[],label:null,barcode:'',rcpt:[]}, est:null
+  addMode:'search', draft:{text:'',files:[],label:null,barcode:'',rcpt:[]}, est:null
 };
 
 /* ---------- persistence: on this device (localStorage) ---------- */
@@ -707,9 +713,12 @@ function fileBtns(kind,multi){
 
 function addPanel(){
   const dr=S.draft, busy=S.est&&S.est.busy;
-  const modes=[['describe','Photo / describe'],['label','Barcode / label'],['receipt','Receipt'],['manual','Manual']];
+  const modes=[['search','Search'],['describe','Photo / describe'],['label','Barcode / label'],['receipt','Receipt'],['manual','Manual']];
   let body='';
-  if(S.addMode==='describe'){
+  if(S.addMode==='search'){
+    body=`<form id="offform" class="row" style="flex-wrap:nowrap"><input id="d-q" class="grow" type="search" data-draft="q" value="${esc(dr.q||'')}" placeholder="Search foods, e.g. kind bar dark chocolate" autocomplete="off" enterkeyhint="search" aria-label="Search foods"><button class="btn" type="submit" ${S.srch&&S.srch.busy?'disabled':''}>Search</button></form>
+      ${searchResults()}`;
+  } else if(S.addMode==='describe'){
     body=`<label for="d-text">Describe what you ate (and add a photo if you like)</label>
       <textarea id="d-text" data-draft="text" placeholder="e.g. two scrambled eggs cooked in butter, one slice of whole wheat toast, black coffee">${esc(dr.text)}</textarea>
       ${thumbs(dr.files,'meal')}
@@ -748,7 +757,7 @@ function estPanel(){
   if(e.error) return `<div class="card"><div class="warn" style="margin:0">${esc(e.error)}</div><div class="row" style="margin-top:8px"><button class="btn ghost small" data-act="estclear">Dismiss</button></div></div>`;
   if(!e.items||!e.items.length) return '';
   return `<div class="card"><h2>Review and add</h2>
-    <div class="note">${e.src==='receipt'?'Read from your receipt. Skip anything someone else ate, and check sizes and counts.':e.src==='qr'?'Read from the code you scanned. Check it looks right.':e.src==='barcode'?'Found in your saved products.':e.src==='label'?'Read from the label. Check it looks right.':'These are estimates, so adjust servings if a portion looks off.'} Adding to <b>${esc(S.foodMeal||mealGuess())}</b> on ${esc(fmtDate(S.date))}.</div>
+    <div class="note">${e.src==='receipt'?'Read from your receipt. Skip anything someone else ate, and check sizes and counts.':e.src==='qr'?'Read from the code you scanned. Check it looks right.':e.src==='barcode'?(e.found?'From Open Food Facts. Check the serving matches what you ate.':'Found in your saved products.'):e.src==='label'?'Read from the label. Check it looks right.':'These are estimates, so adjust servings if a portion looks off.'} Adding to <b>${esc(S.foodMeal||mealGuess())}</b> on ${esc(fmtDate(S.date))}.</div>
     ${e.items.map((it,i)=>`<div class="est"><div class="top"><input class="grow" data-ei="${i}" data-ef="name" value="${esc(it.name)}" aria-label="Food name"><label style="margin:0;white-space:nowrap">× <input type="number" step="0.25" min="0.25" data-ei="${i}" data-ef="qty" value="${it.qty}" style="width:70px;display:inline-block" aria-label="Servings"></label></div>
       <div class="macro">${esc(it.serving_desc||'1 serving')} → ${macroLine(scaled(it))}</div>
       ${it.notes?`<div class="note">${esc(it.notes)}</div>`:''}
@@ -1178,7 +1187,7 @@ function addEstItem(i){
   const nf=makeFood(it,it.qty,S.foodMeal||mealGuess(),S.est.src||'estimate'); if(it.save) nf.pid=S.est.barcode||('p-'+slug(it.name));
   pushFood(nf);
   if(it.save) saveProduct(it,S.est.barcode||'');
-  S.est.items.splice(i,1); if(!S.est.items.length){ S.est=null; S.draft.text=''; clearFiles(); S.draft.barcode=''; S.draft.rcpt.forEach(f=>{try{URL.revokeObjectURL(f.url)}catch(e){}}); S.draft.rcpt=[]; S.draft.rnote=''; }
+  S.est.items.splice(i,1); if(!S.est.items.length){ S.est=null; S.draft.text=''; clearFiles(); S.draft.barcode=''; S.draft.rcpt.forEach(f=>{try{URL.revokeObjectURL(f.url)}catch(e){}}); S.draft.rcpt=[]; S.draft.rnote=''; if(S.addMode==='search'){ S.srch=null; S.draft.q=''; } }
   render();
 }
 
@@ -1347,6 +1356,33 @@ async function offLookup(code){
   return parseOFF(j.product);
 }
 
+/* search Open Food Facts by name; US products first, then worldwide */
+const OFF_FIELDS='code,product_name,brands,serving_size,serving_quantity,nutriments,categories_tags';
+async function offSearch(q){
+  const url=c=>'https://world.openfoodfacts.org/cgi/search.pl?search_simple=1&action=process&json=1&page_size=24&sort_by=unique_scans_n&fields='+OFF_FIELDS+'&search_terms='+encodeURIComponent(q)+(c?'&tagtype_0=countries&tag_contains_0=contains&tag_0=united-states':'');
+  const get=async c=>{ const r=await fetch(url(c)); if(r.status===429||r.status===503){ const e=new Error('busy'); e.busy=true; throw e; } if(!r.ok) throw new Error('search failed'); const j=await r.json(); return (j.products||[]); };
+  let ps=await get(true); if(ps.length<4) ps=ps.concat(await get(false));
+  const seen=new Set(), out=[];
+  ps.forEach(p=>{ const it=parseOFF(p); if(!it||!p.product_name) return; const key=(p.code||it.name).toLowerCase(); if(seen.has(key)) return; seen.add(key); it.code=p.code||''; out.push(it); });
+  return out.slice(0,12);
+}
+async function runSearch(){
+  const q=String(S.draft.q||'').trim();
+  if(q.length<2){ S.srch={error:'Type at least 2 letters of a food or brand.'}; render(); return; }
+  S.srch={busy:true,q}; render();
+  try{ const res=await offSearch(q); S.srch={q,res}; }
+  catch(e){ S.srch={q,error:e&&e.busy?'The food database limits how many searches it takes per minute. Wait a minute and search again; barcode scans still work meanwhile.':navigator.onLine===false?'You are offline. Search needs a connection; your saved products in Quick add still work.':'The food database did not answer. Try again in a moment.'}; }
+  render();
+}
+function searchResults(){
+  const s=S.srch; if(!s) return '';
+  if(s.busy) return `<div class="note" style="margin-top:10px"><span class="spin"></span>Searching Open Food Facts…</div>`;
+  if(s.error) return `<div class="warn">${esc(s.error)}</div>`;
+  if(!s.res.length) return `<div class="note" style="margin-top:10px">No products found for “${esc(s.q)}”. Try the brand plus the product (for example “chobani vanilla”), scan the barcode, or use Photo / describe.</div>`;
+  return `<div style="margin-top:10px">${s.res.map((it,i)=>`<button class="srow" data-act="pickoff" data-i="${i}"><span class="n">${esc(it.name)}<small>${esc(it.serving_desc)} · P ${Math.round(it.protein)}g · C ${Math.round(it.carbs)}g · F ${Math.round(it.fat)}g</small></span><b>${it.cal}</b></button>`).join('')}
+    <div class="note" style="margin-top:6px">From Open Food Facts, a free database anyone can edit. Tap one to review it before adding.</div></div>`;
+}
+
 /* ---------- live barcode scanner ---------- */
 let scanStream=null, scanning=false;
 async function startScan(){
@@ -1421,6 +1457,7 @@ document.addEventListener('click',e=>{
     case 'foodall': { const fs=(day(S.date).foods||[]), all=fs.every(f=>S.openFood[f.id]); fs.forEach(f=>{ S.openFood[f.id]=!all; }); render(); break; }
     case 'delfood': editDay(S.date,d=>{ d.foods=d.foods.filter(f=>f.id!==t.dataset.id); }); render(); break;
     case 'estimate': runEstimate(); break;
+    case 'pickoff': { const it=S.srch&&S.srch.res[+t.dataset.i]; if(it){ S.est={items:[Object.assign({},it,{qty:1,save:true})],src:'barcode',barcode:it.code||''}; S.est.found=true; render(); const e=document.querySelector('.est'); if(e) e.scrollIntoView({behavior:'smooth',block:'center'}); } break; }
     case 'receipt': runReceipt(); break;
     case 'estskip': if(S.est&&S.est.items){ S.est.items.splice(+t.dataset.i,1); if(!S.est.items.length) S.est=null; render(); } break;
     case 'readlabel': readLabel(); break;
@@ -1446,6 +1483,7 @@ document.addEventListener('click',e=>{
     case 'notifperm': if('Notification' in window){ Notification.requestPermission().then(()=>render()); } break;
   }
 });
+document.addEventListener('submit',e=>{ if(e.target.id==='offform'){ e.preventDefault(); e.stopImmediatePropagation(); const i=$('#d-q'); if(i) S.draft.q=i.value; runSearch(); } },true);
 document.addEventListener('submit',e=>{
   if(e.target.id==='foodform'){ e.preventDefault(); const n=$('#fname').value.trim(), c=+$('#fcal').value;
     if(!n){ $('#fname').focus(); return; } addManual(n,c||0,+($('#falc')||{}).value||0); }
