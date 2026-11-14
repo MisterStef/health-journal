@@ -688,6 +688,10 @@ function foodDetail(f){
     ${has?split:'<div class="note" style="margin-top:8px">Only calories were entered for this food. Use a barcode, a label photo, a food QR code or a description to get the full breakdown.</div>'}
     ${has?sections:''}
     <div class="fmeta">${meta.join('')}</div>${plants}
+    <div class="fedit" data-id="${f.id}" style="margin-top:12px"><div class="note" style="margin-bottom:6px"><b>Add or correct</b> a nutrient the source missed (amount for the whole serving you logged).</div>
+      <div class="two"><div><label for="fc-${f.id}">Caffeine (mg)</label><input id="fc-${f.id}" data-fe="caffeine" type="number" inputmode="decimal" min="0" value="${v('caffeine')>0?v('caffeine'):''}" placeholder="0"></div>
+      <div><label for="fa-${f.id}">Alcohol (drinks)</label><input id="fa-${f.id}" data-fe="alcohol" type="number" inputmode="decimal" min="0" step="0.5" value="${v('alcohol')>0?v('alcohol'):''}" placeholder="0"></div></div>
+      <div class="row" style="margin-top:8px"><button class="btn small" data-act="fesave" data-id="${f.id}">Save changes</button></div></div>
     ${has?'<div class="note" style="margin-top:10px">A dash means the source did not list that nutrient, so it counts as 0. Percentages compare this food with your personal daily targets (for limits like sodium, with the limit).</div>':''}</div>`;
 }
 
@@ -740,7 +744,9 @@ function estPanel(){
     ${e.items.map((it,i)=>`<div class="est"><div class="top"><input class="grow" data-ei="${i}" data-ef="name" value="${esc(it.name)}" aria-label="Food name"><label style="margin:0;white-space:nowrap">× <input type="number" step="0.25" min="0.25" data-ei="${i}" data-ef="qty" value="${it.qty}" style="width:70px;display:inline-block" aria-label="Servings"></label></div>
       <div class="macro">${esc(it.serving_desc||'1 serving')} → ${macroLine(scaled(it))}</div>
       ${it.notes?`<div class="note">${esc(it.notes)}</div>`:''}
-      <div class="row sb" style="margin-top:6px"><label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" data-ei="${i}" data-ef="save" ${it.save?'checked':''}> Save to my products</label><button class="btn small" data-act="estadd" data-i="${i}">Add</button></div></div>`).join('')}
+      <div class="two" style="margin-top:8px"><div><label for="ec-${i}">Caffeine (mg per serving)</label><input id="ec-${i}" type="number" inputmode="decimal" min="0" data-ei="${i}" data-ef="caffeine" value="${it.caffeine>0?it.caffeine:''}" placeholder="0" ${it.needs==='caffeine'?'style="border-color:var(--amber)"':''}></div>
+      <div><label for="ea-${i}">Alcohol (drinks per serving)</label><input id="ea-${i}" type="number" inputmode="decimal" min="0" step="0.5" data-ei="${i}" data-ef="alcohol" value="${it.alcohol>0?it.alcohol:''}" placeholder="0"></div></div>
+      <div class="row sb" style="margin-top:8px"><label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" data-ei="${i}" data-ef="save" ${it.save?'checked':''}> Save to my products</label><button class="btn small" data-act="estadd" data-i="${i}">Add</button></div></div>`).join('')}
     <div class="row" style="margin-top:10px"><button class="btn" data-act="estaddall">Add all (${e.items.length})</button><button class="btn ghost" data-act="estclear">Discard</button></div></div>`;
 }
 function scaled(it){ const q=+it.qty||1, o={}; NKEYS.forEach(k=>o[k]=(+it[k]||0)*q); return o; }
@@ -1161,7 +1167,8 @@ function saveProduct(it,barcode){
 }
 function addEstItem(i){
   const it=S.est.items[i]; if(!it) return;
-  pushFood(makeFood(it,it.qty,S.foodMeal||mealGuess(),S.est.src||'estimate'));
+  const nf=makeFood(it,it.qty,S.foodMeal||mealGuess(),S.est.src||'estimate'); if(it.save) nf.pid=S.est.barcode||('p-'+slug(it.name));
+  pushFood(nf);
   if(it.save) saveProduct(it,S.est.barcode||'');
   S.est.items.splice(i,1); if(!S.est.items.length){ S.est=null; S.draft.text=''; clearFiles(); S.draft.barcode=''; }
   render();
@@ -1293,11 +1300,14 @@ function parseOFF(p){
     it[k]=(v!=null&&isFinite(v)&&v>0)?r2(v*f):0; if(v!=null) have++; });
   const abv=+(n.alcohol_100g!=null&&n.alcohol_100g!==''?n.alcohol_100g:n.alcohol);
   if(isFinite(abv)&&abv>0&&abv<100){ it.alcohol=r2(abv*0.789*(sq?sq/100:1)/14); have++; }
+  const drinkish=/energy|coffee|tea|cola|soda|latte|espresso|pre-?workout/i.test((p.categories_tags||[]).join(' ')+' '+(p.product_name||'')+' '+(p.brands||''));
+  if(drinkish&&!(it.caffeine>0)) it.needs='caffeine';
   it.notes=have<8?'The food database has limited detail for this product, so some vitamins and minerals show as 0.':'From Open Food Facts. Check against the package if something looks off.';
+  if(it.needs==='caffeine') it.notes='The food database does not list caffeine for this drink. Enter it below from the can so your caffeine total stays right. '+it.notes;
   return it;
 }
 async function offLookup(code){
-  const r=await fetch('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields=product_name,brands,serving_size,serving_quantity,nutriments');
+  const r=await fetch('https://world.openfoodfacts.org/api/v2/product/'+encodeURIComponent(code)+'.json?fields=product_name,brands,serving_size,serving_quantity,nutriments,categories_tags');
   if(r.status===404) return null;
   if(!r.ok) throw new Error('lookup failed');
   const j=await r.json();
@@ -1370,6 +1380,11 @@ document.addEventListener('click',e=>{
     case 'mode': S.addMode=t.dataset.m; S.est=null; render(); break;
     case 'fav': { const f=favorites()[+t.dataset.i]; if(f) addFoodObj(f.food); break; }
     case 'prod': { const p=S.foods[t.dataset.id]; if(p) pushFood(makeFood(p,1,S.foodMeal||mealGuess(),'saved')), render(); break; }
+    case 'fesave': { const box=t.closest('.fedit'); const vals={}; box.querySelectorAll('[data-fe]').forEach(i=>{ vals[i.dataset.fe]=Math.max(0,+i.value||0); });
+      let food=null; editDay(S.date,d=>{ food=(d.foods||[]).find(x=>x.id===t.dataset.id); if(!food) return; food.n=food.n||{}; Object.keys(vals).forEach(k=>{ if(vals[k]>0) food.n[k]=r2(vals[k]); else delete food.n[k]; }); });
+      if(food){ const q=+food.qty||1, rec=(food.pid&&S.foods[food.pid])||Object.values(S.foods).find(p=>p.name===food.name);
+        if(rec){ Object.keys(vals).forEach(k=>{ rec[k]=r2(vals[k]/q); }); queueSave('foods',rec.id); } }
+      render(); toast('Saved'+(food&&(food.pid||Object.values(S.foods).some(p=>p.name===food.name))?' and updated your saved product':'')); break; }
     case 'foodopen': S.openFood[t.dataset.id]=!S.openFood[t.dataset.id]; render(); break;
     case 'foodall': { const fs=(day(S.date).foods||[]), all=fs.every(f=>S.openFood[f.id]); fs.forEach(f=>{ S.openFood[f.id]=!all; }); render(); break; }
     case 'delfood': editDay(S.date,d=>{ d.foods=d.foods.filter(f=>f.id!==t.dataset.id); }); render(); break;
@@ -1412,6 +1427,7 @@ document.addEventListener('input',e=>{
   } else if(t.dataset.mf){ editMonth(S.month,m=>{ m[t.dataset.mf]=t.value; });
   } else if(t.dataset.set){ const k=t.dataset.set; SET[k]=t.type==='checkbox'?t.checked:(k==='every'?+t.value:t.value.trim()); saveSet(); if(k==='remind'&&t.checked&&'Notification' in window&&Notification.permission==='default') Notification.requestPermission().then(()=>render());
   } else if(t.dataset.draft){ S.draft[t.dataset.draft]=t.value;
+  } else if(t.dataset.ei!=null && (t.dataset.ef==='caffeine'||t.dataset.ef==='alcohol')){ const it=S.est&&S.est.items&&S.est.items[+t.dataset.ei]; if(it){ it[t.dataset.ef]=Math.max(0,+t.value||0); if(t.dataset.ef==='caffeine') it.needs=null; }
   } else if(t.dataset.ei!=null && t.dataset.ef==='name'){ const it=S.est&&S.est.items&&S.est.items[+t.dataset.ei]; if(it) it.name=t.value;
   } else if(t.dataset.pf){ editProfile(p=>{ p[t.dataset.pf]=t.value; }); renderDock(); }
 });
