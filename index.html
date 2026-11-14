@@ -113,6 +113,32 @@ button.chip:active{transform:scale(.95)}
 .sp .top b{font:600 15px var(--display)} .sp .top span{font:600 15px var(--display);font-variant-numeric:tabular-nums}
 .sp .d{font-size:12.5px;color:var(--mute);margin-top:3px;line-height:1.4}
 .sp .w{font-size:11.5px;color:var(--mute);font-weight:400}
+.food-wrap{border-top:1px solid var(--line)}
+.food-wrap:first-of-type{border-top:0}
+.food-wrap .food{border-top:0}
+.fmain{flex:1;min-width:0;display:flex;align-items:center;gap:8px;border:0;background:transparent;color:inherit;text-align:left;padding:0;font:inherit}
+.fmain .car{margin-left:auto;color:var(--mute);transition:transform .35s var(--ease);flex:0 0 auto}
+.fmain[aria-expanded="true"] .car{transform:rotate(180deg)}
+.fdet{background:var(--tile);border-radius:16px;padding:12px 12px 10px;margin:0 0 10px}
+.fdet.reveal{animation:rise .35s var(--ease) both}
+.fkcal{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.fkcal b{font:700 26px/1.1 var(--display);letter-spacing:-.025em;font-variant-numeric:tabular-nums}
+.fkcal span{font-size:12.5px;color:var(--mute)}
+.fsplit{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--line);margin:10px 0 6px}
+.fsplit i{display:block;height:100%}
+.fsl{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mute)}
+.fsl span::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:var(--c)}
+.fgh{display:flex;justify-content:space-between;font-size:12px;font-weight:600;color:var(--mute);margin:14px 0 2px}
+.frow{display:grid;grid-template-columns:1fr auto 46px;gap:8px;align-items:center;font-size:13.5px;padding:5px 0;border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+.frow:first-of-type{border-top:0}
+.frow .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.frow .p{text-align:right;font-variant-numeric:tabular-nums;font-size:12px;color:var(--mute)}
+.frow.zero{color:var(--mute)} .frow.zero .v{font-weight:400}
+.frow .p.over{color:var(--warn);font-weight:600} .frow .p.good{color:var(--accent);font-weight:600}
+.frow small{color:var(--mute);font-weight:400}
+.fmeta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.fmeta span{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12px}
+.fhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:-4px 0 6px}
 .stat span{font-size:12px;color:var(--mute);line-height:1.3;display:block;margin-top:3px}
 .empty{color:var(--mute);font-size:14px;padding:8px 0}
 .note{font-size:13px;color:var(--mute);line-height:1.5}
@@ -309,7 +335,7 @@ const NKEYS = ['cal'].concat(DEFS.map(d=>d.k));
 /* Fixed personal profile (single user). Weight is the starting weight; logged weights take over. */
 const FIXED={sex:'m',birthday:'1997-01-05',height:71,weight:257,goal:215,goalDate:'2027-05-31',pace:1.5,activity:1.375,custom:''};
 const S = {
-  profile:Object.assign({},FIXED,{wake:7,bed:23}), open:{nutr:false,trends:false},
+  profile:Object.assign({},FIXED,{wake:7,bed:23}), open:{nutr:false,trends:false}, openFood:{},
   days:{}, months:{}, foods:{},
   date:todayStr(), tab:'food', month:todayStr().slice(0,7), range:30, metric:'protein',
   foodMeal:null, loaded:false, ai:{busy:false},
@@ -625,6 +651,46 @@ function favorites(){
 }
 function savedProducts(){ return Object.values(S.foods).sort((a,b)=>(b.updated||0)-(a.updated||0)).slice(0,12); }
 function macroLine(o){ return `${Math.round(o.cal||0)} cal · P ${r1(o.protein||0)}g · C ${r1(o.carbs||0)}g · F ${r1(o.fat||0)}g`; }
+
+/* ---------- detailed nutrition for one logged food ---------- */
+const SRC_LABEL={barcode:'Barcode scan',qr:'Food QR code',label:'Nutrition label photo',estimate:'Photo or description estimate',manual:'Entered by hand',quick:'Quick add'};
+function foodDetail(f){
+  const q=1, v=k=>(k==='cal'?+f.cal:+(f.n||{})[k])||0, TT=targets(), cal=+f.cal||0;
+  const P=v('protein'),C=v('carbs'),F=v('fat'), kp=P*4,kc=C*4,kf=F*9, ks=kp+kc+kf||1;
+  const has=Object.keys(f.n||{}).length>0;
+  const split=has?`<div class="fsplit" role="img" aria-label="Calories from protein ${Math.round(kp/ks*100)} percent, carbs ${Math.round(kc/ks*100)} percent, fat ${Math.round(kf/ks*100)} percent"><i style="width:${kp/ks*100}%;background:var(--mint)"></i><i style="width:${kc/ks*100}%;background:var(--energy)"></i><i style="width:${kf/ks*100}%;background:var(--ember)"></i></div>
+    <div class="fsl"><span style="--c:var(--mint)">Protein ${fmtN(P)} g · ${Math.round(kp/ks*100)}%</span><span style="--c:var(--energy)">Carbs ${fmtN(C)} g · ${Math.round(kc/ks*100)}%</span><span style="--c:var(--ember)">Fat ${fmtN(F)} g · ${Math.round(kf/ks*100)}%</span></div>`:'';
+  const row=(label,val,unit,k,extra)=>{
+    const T=TT[k]; let pct='',cls='';
+    if(T&&val>0&&T.t>0){ const p=val/T.t*100; pct=Math.round(p)+'%'; cls=T.ty==='max'?(p>100?'over':''):(p>=20?'good':''); }
+    else if(T&&val>0&&T.t===0) { pct='over'; cls='over'; }
+    const zero=!(val>0);
+    return `<div class="frow${zero?' zero':''}"><span>${label}${extra?` <small>${extra}</small>`:''}</span><span class="v">${zero?'—':fmtN(val)+' '+unit}</span><span class="p ${cls}">${zero?'':pct}</span></div>`;
+  };
+  const GRP=['Macros','Fats','Sugar, sodium & caffeine','Alcohol','Minerals','Vitamins'];
+  const sections=GRP.map(g=>{
+    const rows=DEFS.filter(d=>d.g===g).map(d=>row(esc(d.l),v(d.k),d.u,d.k)).join('');
+    let extra='';
+    if(g==='Macros'&&has){ extra=row('Net carbs',Math.max(0,C-v('fiber')),'g',null,'carbs minus fiber'); }
+    if(g==='Fats'&&has){ const unsat=v('mono')+v('poly'); extra=row('Unsaturated fat',unsat,'g',null,'mono + poly'); }
+    const title=g;
+    if(has&&['Alcohol','Minerals','Vitamins'].includes(g)&&!DEFS.some(d=>d.g===g&&v(d.k)>0)) return `<div class="fgh"><span>${title}</span></div><div class="note">None listed by the source.</div>`;
+    return `<div class="fgh"><span>${title}</span>${g==='Macros'?'<span>% of your daily target</span>':''}</div>${rows}${extra}`;
+  }).join('');
+  const meta=[];
+  meta.push(`<span>${esc(f.meal||'Meal')}</span>`);
+  if(f.qty&&f.qty!==1) meta.push(`<span>${f.qty} servings</span>`);
+  if(f.t) meta.push(`<span>Added ${esc(new Date(f.t).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}))}</span>`);
+  if(f.src) meta.push(`<span>${esc(SRC_LABEL[f.src]||'Estimate')}</span>`);
+  (f.groups||[]).forEach(g=>meta.push(`<span>${esc(g)}</span>`));
+  const plants=(f.plants||[]).length?`<div class="note" style="margin-top:8px"><b>Plant foods counted:</b> ${esc(f.plants.join(', '))}</div>`:'';
+  return `<div class="fdet reveal"><div class="fkcal"><b>${Math.round(cal)} <small style="font:500 14px 'Inter',system-ui,sans-serif;color:var(--mute)">calories</small></b><span>${TT?`${Math.round(cal/(targetCal()||2000)*100)}% of today’s calorie goal`:''}</span></div>
+    ${has?split:'<div class="note" style="margin-top:8px">Only calories were entered for this food. Use a barcode, a label photo, a food QR code or a description to get the full breakdown.</div>'}
+    ${has?sections:''}
+    <div class="fmeta">${meta.join('')}</div>${plants}
+    ${has?'<div class="note" style="margin-top:10px">A dash means the source did not list that nutrient, so it counts as 0. Percentages compare this food with your personal daily targets (for limits like sodium, with the limit).</div>':''}</div>`;
+}
+
 function foodMacro(f){ return macroLine({cal:f.cal,protein:fval(f,'protein'),carbs:fval(f,'carbs'),fat:fval(f,'fat')}); }
 
 function thumbs(list,kind){
@@ -694,7 +760,7 @@ function vFood(){
   const favs=favorites(), prods=savedProducts();
   const groups=MEALS.map(m=>{
     const items=(d.foods||[]).filter(f=>f.meal===m); if(!items.length) return '';
-    return `<div style="margin-top:8px"><h3>${m} · ${Math.round(items.reduce((a,f)=>a+(+f.cal||0),0))} cal</h3>${items.map(f=>`<div class="food"><div class="n">${esc(f.name)}${f.qty&&f.qty!==1?` (×${f.qty})`:''}<small>${f.n&&Object.keys(f.n).length?foodMacro(f):'calories only'}</small></div><div class="c">${Math.round(+f.cal||0)}</div><button class="x" data-act="delfood" data-id="${f.id}" aria-label="Remove ${esc(f.name)}">×</button></div>`).join('')}</div>`;
+    return `<div style="margin-top:8px"><h3>${m} · ${Math.round(items.reduce((a,f)=>a+(+f.cal||0),0))} cal</h3>${items.map(f=>{ const op=!!S.openFood[f.id]; return `<div class="food-wrap"><div class="food"><button class="fmain" data-act="foodopen" data-id="${f.id}" aria-expanded="${op}" aria-label="${op?'Hide':'Show'} nutrition details for ${esc(f.name)}"><span class="n">${esc(f.name)}${f.qty&&f.qty!==1?` (×${f.qty})`:''}<small>${f.n&&Object.keys(f.n).length?foodMacro(f):'calories only'}</small></span><span class="car">${ic('chevD',18)}</span></button><div class="c">${Math.round(+f.cal||0)}</div><button class="x" data-act="delfood" data-id="${f.id}" aria-label="Remove ${esc(f.name)}">×</button></div>${op?foodDetail(f):''}</div>`; }).join('')}</div>`;
   }).join('');
   const tot=dayTotals(d), open=S.open.nutr;
   const nutr=`<button class="toggle" data-act="toggle" data-k="nutr" aria-expanded="${open}"><span><b>Nutrients</b><small>${open?'Tap to collapse':esc(nutrSummary(tot))}</small></span><span class="car">${ic('chevD',18)}</span></button>${open?`<div class="collapse${S.rev==='nutr'?' reveal':''}">${nutrBody()}</div>`:''}`;
@@ -705,7 +771,7 @@ function vFood(){
   </div>
   ${estPanel()}
   ${(favs.length||prods.length)?`<div class="card"><h3>Quick add</h3><div class="chips">${prods.map(p=>`<button class="chip fav" data-act="prod" data-id="${esc(p.id)}">${ic('box',14)} ${esc(p.name)} <span>${Math.round(p.cal||0)}</span></button>`).join('')}${favs.map((f,i)=>`<button class="chip fav" data-act="fav" data-i="${i}">${esc(f.name)} <span>${Math.round(+f.food.cal||0)}</span></button>`).join('')}</div></div>`:''}
-  <div class="card"><h2>Today’s log</h2>${groups||'<div class="empty">Nothing logged for this day yet.</div>'}</div>`;
+  <div class="card"><div class="fhead"><h2 style="margin:0">${S.date===todayStr()?'Today’s log':'Log for '+esc(fmtDate(S.date))}</h2>${(d.foods||[]).length?`<button class="btn ghost small" data-act="foodall">${(d.foods||[]).every(f=>S.openFood[f.id])?'Hide all details':'Show all details'}</button>`:''}</div>${groups||'<div class="empty">Nothing logged for this day yet.</div>'}</div>`;
 }
 
 /* ----- nutrients (collapsible, top of Food tab) ----- */
@@ -1304,6 +1370,8 @@ document.addEventListener('click',e=>{
     case 'mode': S.addMode=t.dataset.m; S.est=null; render(); break;
     case 'fav': { const f=favorites()[+t.dataset.i]; if(f) addFoodObj(f.food); break; }
     case 'prod': { const p=S.foods[t.dataset.id]; if(p) pushFood(makeFood(p,1,S.foodMeal||mealGuess(),'saved')), render(); break; }
+    case 'foodopen': S.openFood[t.dataset.id]=!S.openFood[t.dataset.id]; render(); break;
+    case 'foodall': { const fs=(day(S.date).foods||[]), all=fs.every(f=>S.openFood[f.id]); fs.forEach(f=>{ S.openFood[f.id]=!all; }); render(); break; }
     case 'delfood': editDay(S.date,d=>{ d.foods=d.foods.filter(f=>f.id!==t.dataset.id); }); render(); break;
     case 'estimate': runEstimate(); break;
     case 'readlabel': readLabel(); break;
